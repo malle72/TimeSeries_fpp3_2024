@@ -1,5 +1,121 @@
 
+prison <- readr::read_csv("https://OTexts.com/fpp3/extrafiles/prison_population.csv")
 
-PBS |> 
+prison <- prison |>
+  mutate(Quarter = yearquarter(Date)) |>
+  select(-Date) |>
+  as_tsibble(key = c(State, Gender, Legal, Indigenous),
+             index = Quarter)
+
+# ===== Pharmacy Data =====
+PBS |>
   filter(ATC2 == "A10") |>
-  select(Month, Concession, Type, Cost)
+  select(Month, Concession, Type, Cost) |>
+  summarise(TotalC = sum(Cost)) |>
+  mutate(Cost = TotalC / 1e6) -> a10
+
+
+a10 |>
+  autoplot() + 
+  geom_point() +
+  labs(y= "$ (millions)",
+                    title = "australian antidiabetic drug sales")
+
+# ===== Airline Data =====
+ansett |>
+  autoplot(Passengers)
+
+ansett |> distinct(Class)
+ansett |> distinct(Airports)
+
+
+melsyd_economy <- ansett |>
+  filter(Airports=="MEL-SYD", Class == "Economy") |>
+  mutate(Passengers = Passengers/1000) |>
+  select(-Airports)
+
+melsyd_economy |> 
+  autoplot(Passengers) +
+  labs(y = "Passengers (Thousands)",
+       title = "Ansett airlines economy class",
+       subtitle = "Melbourne-Sydney")
+
+
+# ==== Patterns ====
+
+aus_production |>
+  filter(year(Quarter) >= 1980) |>
+  autoplot(Electricity)
+
+aus_production |>
+  autoplot(Bricks)
+
+pelt |>
+  autoplot(Lynx) + 
+  labs(y = "Number Trapped", title="Annual Canadian Lynx Trappings")
+
+
+# ====Seasonal Plots====
+a10 |> 
+  gg_season(Cost, labels='both') +
+  labs(y = "$ (millions)",
+       title = "Seasonal plot: Antidiabetic drug sales")
+
+
+beer <- aus_production |>
+  select(Quarter, Beer) |>
+  filter(year(Quarter) >= 1992)
+
+beer |> autoplot(Beer) +geom_point()
+
+beer |> gg_season(Beer,labels='right')
+
+
+vic_elec |> gg_season(Demand,period='day')
+vic_elec |> gg_season(Demand,period='week')
+
+
+# ====Subseasonal Plots====
+a10 |>
+  gg_subseries(Cost) + 
+  labs(
+    y = "$ (millions)",
+    title = "Australian antidiabetic drug sales"
+  )
+
+
+holidays <- tourism |>
+  filter(Purpose == "Holiday") |>
+  group_by(State) |>
+  summarise(Trips = sum(Trips))
+
+autoplot(holidays, Trips) +
+  labs(y = "Overnight trips ('000)",
+       title = "Australian domestic holidays")
+
+
+holidays |>
+  gg_subseries(Trips) +
+  labs(y = "Overnight trips ('000)",
+       title = "Australian domestic holidays")
+
+# ====Scatterplots====
+vic_elec |>
+  filter(year(Time) == 2014) |>
+  autoplot(Demand) +
+  labs(y = "GW",
+       title = "Half-hourly electricity demand: Victoria")
+
+vic_elec |>
+  filter(year(Time) == 2014) |>
+  autoplot(Temperature) +
+  labs(
+    y = "Degrees Celsius",
+    title = "Half-hourly temperatures: Melbourne, Australia")
+
+vic_elec |>
+  filter(year(Time) == 2014) |>
+  ggplot(aes(x = Temperature, y = Demand)) +
+  geom_point() +
+  labs(x = "Temperature (degrees Celsius)",
+       y = "Electricity demand (GW)")
