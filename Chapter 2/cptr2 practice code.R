@@ -119,3 +119,13 @@ vic_elec |>
   geom_point() +
   labs(x = "Temperature (degrees Celsius)",
        y = "Electricity demand (GW)")
+
+visitors <- tourism |>
+  group_by(State) |>
+  summarise(Trips = sum(Trips))
+visitors |>
+  ggplot(aes(x = Quarter, y = Trips)) +
+  geom_line() +
+  facet_grid(vars(State), scales = "free_y") +
+  labs(title = "Australian domestic tourism",
+       y= "Overnight trips ('000)")
