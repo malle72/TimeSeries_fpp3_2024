@@ -1,13 +1,13 @@
 
 # convert tibble to tsibble (daily)
 crashes_d <- crashes |>
-  mutate(CrashDate = mdy(CrashDate)) |>
-  as_tsibble(index = CrashDate)
+  mutate(CrashDate = ymd(CrashDate)) |>
+  as_tsibble(index = CrashDate, key = HighwayClass)
 
 # convert tibble to tsibble (monthly)
 crashes_m <- crashes |>
   mutate(Month = yearmonth(CrashDate)) |>
-  group_by(Month) |>
+  group_by(Month, HighwayClass) |>
   summarise(
     Crashes = sum(Crashes),
     Pedestrian = sum(Pedestrian),
@@ -16,7 +16,7 @@ crashes_m <- crashes |>
     Motorcycle = sum(Motorcycle),
     Fatal = sum(Fatal)
     ) |>
-  as_tsibble(index = Month)
+  as_tsibble(index = Month, key = HighwayClass)
 
 # renaming column Crashes -> crashCount
 crashes_d <- mutate(crashes_d, crashCount = Crashes)
