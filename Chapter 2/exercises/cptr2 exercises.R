@@ -41,6 +41,12 @@ us_ne |>
   autoplot(y)
 
 # 5
+tourism2 <- read_excel('exercises/tourism.xlsx')
+
+tourism2 <- tourism2 |>
+  mutate(Quarter = yearquarter(Quarter)) |>
+  as_tsibble(key=c(Region, State, Purpose), index=Quarter)
+
 
 # 6
 aus_arrivals |>
@@ -57,11 +63,47 @@ aus_arrivals |>
 aus_arrivals |>
   gg_subseries(Arrivals)
 # Q2 and Q4 from japan have odd dips in early 2000s
-# Q2 and Q3 from the US in 2000 spike due to the summer Olympics in Melbourne
+# Q2 and Q3 from the US in 2000 spike due to the summer Olympics in Sydney
 # Q2 from US continues to spike in 2001, likely due to latent tourism from Olympics
 
+# 7
+set.seed(8675309)
+my_retail <- aus_retail |>
+  filter(`Series ID` == sample(aus_retail$`Series ID`,1))
+# Takeaway food services in Queensland
+
+my_retail |>
+  autoplot(Turnover) +
+  geom_vline(xintercept=yearmonth('2012 Jan', abbr=TRUE))
+# Steady upward trend 
+# Trend may have leveled off by early/mid 2010s 
+# Variance increases at leveling off point
+# Seasonal pattern might be emerging at end of data.
+
+my_retail |>
+  gg_season(Turnover) 
 
 
+my_retail |>
+  gg_subseries(Turnover)
+
+my_retail |>
+  gg_lag(Turnover,lags=1:12)
+
+my_retail |>
+  ACF(Turnover) |>
+  autoplot()
+# Very obvious trend with maybe a little bit of seasonality. 
+
+my_retail |>
+  filter(year(Month) >= 2012) |>
+  gg_lag(Turnover,lags=1:12)
+
+my_retail |>
+  filter(year(Month) >= 2012) |>
+  ACF(Turnover) |>
+  autoplot()
+# compared to the ACF for the full dataset, this looks more like a seasonal ACF
 
 # 9
 

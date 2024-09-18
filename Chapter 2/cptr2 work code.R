@@ -1,4 +1,10 @@
 
+crashes |>
+  group_by(HighwayClass) |>
+  summarise(countCrash=sum(Crashes)) |>
+  arrange(countCrash)|>
+  print(n=23)
+
 # convert tibble to tsibble (daily)
 crashes_d <- crashes |>
   mutate(CrashDate = ymd(CrashDate)) |>
@@ -39,15 +45,44 @@ crashes_m |>
   autoplot(PercentFatal)
 
 
+# need to filter down to fewer hwy classes
+#  remove ones with very few crashes
+# hwy classes to remove: 6,31,42,29,23,11,9,19,33,4,NULL
+
+
 crashes_d |>
-  gg_season(Fatal, period='year')
+  filter(! HighwayClass %in% c(6,31,42,29,23,11,9,19,33,4,'NULL')) |>
+  fill_gaps() |>
+  gg_season(crashCount)
+
+
+crashes_m |> 
+  filter(! HighwayClass %in% c(6,31,42,29,23,11,9,19,33,4,'NULL')) |>
+  fill_gaps() |>
+  gg_season(crashCount)
+
+
+# Lag
+crashes_d |>
+  filter(HighwayClass == 20) |>
+  gg_lag(crashCount, geom = 'point')
 
 crashes_m |>
-  gg_subseries(crashCount)
+  filter(HighwayClass == 20) |>
+  ungroup() |>
+  gg_lag(crashCount, geom = 'point', lags = 1:12)
 
+# Autocorrelation 
+crashes_d |>
+  filter(HighwayClass == 20) |>
+  fill_gaps() |>
+  ACF(crashCount) |>
+  autoplot()
 
-
-
-
+crashes_m |>
+  filter(HighwayClass == 20) |>
+  fill_gaps() |>
+  ACF(crashCount, lag_max = 12) |>
+  autoplot()
 
 

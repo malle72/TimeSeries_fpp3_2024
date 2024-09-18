@@ -70,7 +70,7 @@ beer |> autoplot(Beer) +geom_point()
 
 beer |> gg_season(Beer,labels='right')
 
-
+vic_elec |> gg_season(Demand)
 vic_elec |> gg_season(Demand,period='day')
 vic_elec |> gg_season(Demand,period='week')
 
