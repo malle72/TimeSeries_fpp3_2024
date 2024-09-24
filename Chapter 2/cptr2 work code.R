@@ -1,7 +1,7 @@
 
 crashes |>
   group_by(HighwayClass) |>
-  summarise(countCrash=sum(Crashes)) |>
+  summarise(countCrash=sum(crashCount)) |>
   arrange(countCrash)|>
   print(n=23)
 
@@ -61,6 +61,10 @@ crashes_m |>
   fill_gaps() |>
   gg_season(crashCount)
 
+
+crashes_m |>
+  filter(HighwayClass == 20) |>
+  autoplot()
 
 # Lag
 crashes_d |>
