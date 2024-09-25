@@ -1,5 +1,6 @@
 select 
-CrashDate,
+CrashYear,
+MonthSort,
 HighwayClass,
 COUNT(1) AS crashCount,
 SUM(CAST(Pedestrian as int)) AS Pedestrian,
@@ -10,5 +11,5 @@ SUM(CAST(Fatal as int)) AS Fatal
 from FactCrash
 where CrashYear between 2021 and 2023
 and ParishCode = 17
-group by CrashDate, HighwayClass
-order by CrashDate, CAST(HighwayClass as int)
+group by CrashYear, MonthSort, HighwayClass
+order by CrashYear, MonthSort, CAST(HighwayClass as int)

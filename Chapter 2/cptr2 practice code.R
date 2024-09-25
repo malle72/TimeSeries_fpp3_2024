@@ -70,7 +70,7 @@ beer |> autoplot(Beer) +geom_point()
 
 beer |> gg_season(Beer,labels='right')
 
-
+vic_elec |> gg_season(Demand)
 vic_elec |> gg_season(Demand,period='day')
 vic_elec |> gg_season(Demand,period='week')
 
@@ -129,3 +129,43 @@ visitors |>
   facet_grid(vars(State), scales = "free_y") +
   labs(title = "Australian domestic tourism",
        y= "Overnight trips ('000)")
+visitors |>
+  pivot_wider(values_from=Trips, names_from=State) |>
+  GGally::ggpairs(columns = 2:9)
+
+# ====Lag Plots====
+recent_production <- aus_production |>
+  filter(year(Quarter) >= 2000)
+recent_production |>
+  gg_lag(Beer, geom = "point") +
+  labs(x = "lag(Beer, k)")
+
+# ====Autocorrelation====
+recent_production |> ACF(Beer, lag_max = 9)
+# ^ Seasonal autocorrelations. 
+# The same quarters each year are similar to previous years
+recent_production |>
+  ACF(Beer) |>
+  autoplot() + labs(title="Australian beer production")
+
+# Trend and seasonal
+# adjacent observations are similar and there's seasonality
+a10 |>
+  ACF(Cost, lag_max = 48) |>
+  autoplot() +
+  labs(title="Australian antidiabetic drug sales")
+
+# ====White Noise====
+# And interpreting ACF plots
+
+# Create white noise data and plot it as time series
+set.seed(30)
+y <- tsibble(sample = 1:50, wn = rnorm(50), index = sample)
+y |> autoplot(wn) + labs(title = "White noise", y = "")
+
+# ACF plot of white noise. None of the peaks go outside blue lines
+y |>
+  ACF(wn) |>
+  autoplot() + labs(title = "White noise")
+
+
