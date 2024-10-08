@@ -23,9 +23,10 @@ components(dcmp) |>
 # 7
 # Last 5 years of gas data
 gas <- tail(aus_production, 5*4) |> select(Gas)
+gas_full <- aus_production |> select(Gas)
 
 # a
-gas |>
+gas_full |>
   autoplot(Gas)
 # Strong seasonality
 # Upward trend-cycle
@@ -56,6 +57,8 @@ dcmp_gas_out <- gas_out |>
 # Plot new seasonal adj data
 components(dcmp_gas_out) |>
   autoplot(season_adjust)
+components(dcmp_gas_out) |>
+  autoplot()
 # Large spike in the middle of the data. 
 # Outlier clearly masks trend and effect of rest of the data.
 # Outliers at indexes 1, 12, 19, and 20 were observed to see if 
