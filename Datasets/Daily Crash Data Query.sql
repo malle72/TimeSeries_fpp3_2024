@@ -8,7 +8,7 @@ SUM(CAST(NonMotorist as int)) AS NonMotorist,
 SUM(CAST(Motorcycle as int)) AS Motorcycle,
 SUM(CAST(Fatal as int)) AS Fatal
 from FactCrash
-where CrashYear between 2021 and 2023
+where CrashYear between 2018 and 2023
 and ParishCode = 17
 group by CrashDate, HighwayClass
 order by CrashDate, CAST(HighwayClass as int)
