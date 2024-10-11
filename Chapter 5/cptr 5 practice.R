@@ -22,7 +22,7 @@ fit |>
   filter(Country == "Sweden") |>
   autoplot(gdpc)
 
-# ==== Some Simple Forecasting Methods ====
+# ==== 5.2 Some Simple Forecasting Methods ====
 
 # Video Code
 brick_fit <- aus_production |>
@@ -158,3 +158,93 @@ google_fc |>
        title = "Google daily closing stock prices",
        subtitle = "(Jan 2015 - Jan 2016)") +
   guides(colour = guide_legend(title = "Forecast"))
+
+# ==== 5.3 Fitted Values and Residuals ====
+augment(beer_fit)
+
+# ==== 5.4 Residual Diagnostics ====
+
+fit <- fb_stock |>
+  model(NAIVE(Close))
+augment(fit)
+
+augment(fit) |>
+  ggplot(aes(x=trading_day)) +
+  geom_line(aes(y=Close,color='Data'))+
+  geom_line(aes(y=.fitted,color='Fitted'))
+
+augment(fit) |>
+  filter(trading_day > 1100) |>
+  ggplot(aes(x=trading_day)) +
+  geom_line(aes(y=Close,color='Data'))+
+  geom_line(aes(y=.fitted,color='Fitted'))
+
+augment(fit) |>
+  autoplot(.resid) +
+  labs(y = '$US',
+       title='Residuals from naive method')
+
+augment(fit) |>
+  ggplot(aes(x=.resid)) +
+  geom_histogram(bins=150)+
+  labs(title="Histogram of Residuals")
+
+# We assume residuals are white noise, so check their ACF plot
+augment(fit) |>
+  ACF(.resid) |>
+  autoplot() +
+  labs(title='ACF of Residuals')
+
+# plots the three above charts all at once
+gg_tsresiduals(fit)
+
+# Test for if residuals are white noise
+# returns p-value. p<0.05 means residuals are not white noise
+augment(fit) |>
+  features(.resid,ljung_box, lag=10)
+
+# Text Code
+
+autoplot(google_2015, Close) +
+  labs(y = "$US",
+       title = "Google daily closing stock prices in 2015")
+
+aug <- google_2015 |>
+  model(NAIVE(Close)) |>
+  augment()
+
+autoplot(aug, .innov) +
+  geom_hline(yintercept = mean(aug$.innov,na.rm = T)) +  # added mean of innov resid; removed na vals
+    labs(y = "$US",
+       title = "Residuals from the naïve method")
+
+aug |>
+  ggplot(aes(x = .innov)) +
+  geom_histogram() +
+  labs(title = "Histogram of residuals")
+
+aug |>
+  ACF(.innov) |>
+  autoplot() +
+  labs(title = "Residuals from the naïve method")
+
+google_2015 |>
+  model(NAIVE(Close)) |>
+  gg_tsresiduals()
+
+aug |> features(.innov, box_pierce, lag = 10)
+
+aug |> features(.innov, ljung_box, lag = 10)  # neither have p<0.05
+
+# Alternate model
+fit <- google_2015 |> model(RW(Close ~ drift()))
+tidy(fit)
+
+augment(fit) |> features(.innov, ljung_box, lag=10)
+
+# ==== 5.5 Forecast Distributions ====
+bricks |>
+  model(Seasonal_naive = SNAIVE(Bricks)) |>
+  forecast(h='5 years') |>
+  hilo(level=95) |>
+  mutate(lower = `95%`$lower, upper = `95%`$upper)
