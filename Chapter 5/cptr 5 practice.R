@@ -248,3 +248,117 @@ bricks |>
   forecast(h='5 years') |>
   hilo(level=95) |>
   mutate(lower = `95%`$lower, upper = `95%`$upper)
+
+google_2015 |>
+  model(NAIVE(Close)) |>
+  forecast(h = 10) |>
+  hilo()
+
+google_2015 |>
+  model(NAIVE(Close)) |>  # Naive forecast
+  forecast(h = 10) |>     # 10 periods ahead
+  autoplot(google_2015) +
+  labs(title="Google daily closing stock price", y="$US" )
+
+
+fit <- google_2015 |>
+  model(NAIVE(Close))
+sim <- fit |> generate(h = 30, times = 5, bootstrap = TRUE)
+sim |>
+  print(n=150)
+
+google_2015 |>
+  ggplot(aes(x = day)) +
+  geom_line(aes(y = Close)) +
+  geom_line(aes(y = .sim, colour = as.factor(.rep)),
+            data = sim) +
+  labs(title="Google daily closing stock price", y="$US" ) +
+  guides(colour = "none")
+
+fc <- fit |> forecast(h = 30, bootstrap = TRUE)
+fc
+
+autoplot(fc, google_2015) +
+  labs(title="Google daily closing stock price", y="$US" )
+
+google_2015 |>
+  model(NAIVE(Close)) |>
+  forecast(h = 10, bootstrap = TRUE, times = 1000) |>
+  hilo()
+
+# ==== 5.6 Forecasting using Transformations ====
+eggs <- prices |>
+  filter(!is.na(eggs)) |>
+  select(eggs)
+eggs |>
+  autoplot() +
+  labs(title = "Annual egg prices", y="US$ (adj for inflation")
+
+fit <- eggs |>
+  model(RW(log(eggs) ~ drift()))
+fit
+
+fc <- fit |>
+  forecast(h=50)
+fc
+
+fc |> autoplot(eggs)
+
+fc |> 
+  autoplot(eggs,level=80, point_forecast = lst(mean, median))
+
+
+# ==== 5.7 Forecasting with Decomposition ====
+
+us_retail_employment <- us_employment |>
+  filter(year(Month) >= 1990, Title == "Retail Trade")
+
+dcmp <- us_retail_employment |>
+  model(STL(Employed ~ trend(window = 7), robust = TRUE)) |>
+  components() |>
+  select(-.model)
+
+dcmp |>
+  model(NAIVE(season_adjust)) |>
+  forecast() |>
+  autoplot(dcmp) +
+  labs(y = "Number of people",
+       title = "Naive Forecast of Seasonally Adj")
+
+
+fit_dcmp <- us_retail_employment |>
+  model(stlf = decomposition_model(
+    STL(Employed ~ trend(window = 7), robust = TRUE),
+    NAIVE(season_adjust)
+  ))
+
+fit_dcmp |>
+  forecast() |>
+  autoplot(us_retail_employment)+
+  labs(y = "Number of people",
+       title = "US retail employment")
+
+fit_dcmp |> gg_tsresiduals()
+
+
+# ==== 5.8 Evaluating Point Forecast Accuracy ====
+aus_production |> filter(year(Quarter) >= 1995)
+
+aus_production |> filter_index("1995 Q1" ~ .)
+
+# ==== 5.9 Evaluating Distribution Forecast Accuracy ====
+google_fit <- google_2015 |>
+  model(
+    Mean = MEAN(Close),
+    Naive = NAIVE(Close),
+    Drift = RW(Close ~ drift())
+  )
+
+google_fc <- google_fit |>
+  forecast(google_jan_2016)
+
+google_fc |>
+  filter(.model == "Naive") |>
+  autoplot(bind_rows(google_2015, google_jan_2016), level=80)+
+  labs(y = "$US",
+       title = "Google closing stock prices")
