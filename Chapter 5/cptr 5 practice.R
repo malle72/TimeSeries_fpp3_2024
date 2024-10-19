@@ -347,6 +347,8 @@ aus_production |> filter(year(Quarter) >= 1995)
 aus_production |> filter_index("1995 Q1" ~ .)
 
 # ==== 5.9 Evaluating Distribution Forecast Accuracy ====
+
+# fit non-seasonal models
 google_fit <- google_2015 |>
   model(
     Mean = MEAN(Close),
@@ -354,11 +356,69 @@ google_fit <- google_2015 |>
     Drift = RW(Close ~ drift())
   )
 
+# forecast across next month of data
 google_fc <- google_fit |>
   forecast(google_jan_2016)
 
+# Plotting forecast from Mean model
 google_fc |>
-  filter(.model == "Naive") |>
-  autoplot(bind_rows(google_2015, google_jan_2016), level=80)+
+  filter(.model == "Mean") |>  # select only Mean model
+  autoplot(bind_rows(google_2015, google_jan_2016))+
   labs(y = "$US",
-       title = "Google closing stock prices")
+       title = "Google closing stock prices: Mean forecasts") +
+  guides(color = guide_legend(title='Forecast')) + ylim(439,880)
+
+# Plotting forecast from Naive model
+google_fc |>
+  filter(.model == "Naive") |>  # select only Naive model
+  autoplot(bind_rows(google_2015, google_jan_2016))+
+  labs(y = "$US",
+       title = "Google closing stock prices: Naive forecasts") +
+  guides(color = guide_legend(title='Forecast')) + ylim(439,880)
+
+# Plotting forecast from Drift model
+google_fc |>
+  filter(.model == "Drift") |>  # select only Drift model
+  autoplot(bind_rows(google_2015, google_jan_2016))+
+  labs(y = "$US",
+       title = "Google closing stock prices: Drift forecasts") +
+  guides(color = guide_legend(title='Forecast')) + ylim(439,880)
+
+# Quantile Scores
+google_fc |>
+  filter(.model == "Naive", Date == "2016-01-04") |>
+  accuracy(google_stock, list(qs=quantile_score), probs=0.1) # 10% quantile
+
+google_fc |>
+  filter(.model == "Naive", Date == "2016-01-04") |>
+  accuracy(google_stock, list(qs=quantile_score), probs=0.9) # 90% quantile
+
+# Winkler Score
+google_fc |>
+  filter(.model == "Naive", Date == "2016-01-04") |>
+  accuracy(google_stock, list(winkler=winkler_score), level=80)
+
+# Continuous Ranked Probability Score
+google_fc |>
+  accuracy(google_stock, list(crps=CRPS))
+
+# Skill scores
+google_fc |>
+  accuracy(google_stock, list(skill=skill_score(CRPS)))
+
+# ==== 5.10 Time Series Cross-Validation ====
+fb_stretch <- fb_stock |>
+  stretch_tsibble(.init=3, .step=1) |>  # preps tsibble for cross-validation
+  filter(.id != max(.id))
+
+fit_cv <- fb_stretch |>
+  model(RW(Close ~ drift()))
+
+fc_cv <- fit_cv |>
+  forecast(h=1)
+
+fc_cv |> accuracy(fb_stock)
+
+fb_stock |>
+  model(RW(Close ~ drift())) |>
+  accuracy()
