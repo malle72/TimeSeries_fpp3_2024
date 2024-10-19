@@ -11,8 +11,8 @@ tourism_features <- tourism |>
   features(Trips, feature_set(pkgs = "feasts"))
 
 tourism_features |>
-  filter(Purpose == "Holiday") |>
-  select_at(vars(contains("season"))) |>
+  filter(Purpose == "Holiday",State!="ACT") |>
+  select_at(vars(contains("season"),State)) |>
   mutate(
   seasonal_peak_year = seasonal_peak_year +
     4*(seasonal_peak_year==0),
@@ -21,7 +21,7 @@ tourism_features |>
   seasonal_peak_year = glue("Q{seasonal_peak_year}"),
   seasonal_trough_year = glue("Q{seasonal_trough_year}"),
   ) |>
-  GGally::ggpairs()
+  GGally::ggpairs(mapping = aes(colour = State))
 
 # 2
 # What is the peak quarter for holidays in each state?
@@ -48,18 +48,11 @@ outliers <- pbs_pcs |>
   select(Concession, Type, ATC1, ATC2, .fittedPC1, .fittedPC2)
 outliers
 
-# Display data from outlier observations
-outliers |>
-  left_join(tourism, by = c("Concession", "Type", "ATC1", "ATC2"), multiple = "all") |>
-  mutate(Series = glue("{Concession}", "{Type}", "{ATC1}", "{ATC2}", .sep = "\n\n")) |>
-  ggplot(aes(x = Month, y = Cost)) +
-  geom_line() +
-  facet_grid(Series ~ ., scales = "free") +
-  labs(title = "Outlying time series in PC space")
+OutlierFull=PBS|>filter(Concession=="Concessional",Type=="Co-payments",ATC1=="C",ATC2=="C10")
 
-PBS |>
-  filter(Concession == 'Concessional' & Type=='Co-payments' & ATC1 == 'C' & ATC2 == 'C10') |>
+# Display data from outlier observations
+OutlierFull|> 
   ggplot(aes(x = Month, y = Cost)) +
-  geom_line() +
-  facet_grid(Series ~ ., scales = "free") +
-  labs(title = "Outlying time series in PC space")
+  geom_line()
+
+
