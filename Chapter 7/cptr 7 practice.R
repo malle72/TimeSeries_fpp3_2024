@@ -100,4 +100,71 @@ us_change |>
 
 # ==== 7.4 Some Useful Predictors ====
 
+recent_production <- aus_production |>
+  filter(year(Quarter) >= 1992) |>
+  select(Quarter,Beer)
+
+recent_production |>
+  autoplot(Beer) +
+  labs(y = "Megalitres",
+       title = "Australian quarterly beer production")
+
+fit_beer <- recent_production |> model(TSLM(Beer ~ trend() + season()))
+report(fit_beer)
+
+
+augment(fit_beer) |>
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Beer, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  ) +
+  labs(y = "Megalitres",
+       title = "Australian quarterly beer production") +
+  guides(colour = guide_legend(title = "Series"))
+
+augment(fit_beer) |>
+  ggplot(aes(x = Beer, y = .fitted,
+             colour = factor(quarter(Quarter)))) +
+  geom_point() +
+  labs(y = "Fitted", x = "Actual values",
+       title = "Australian quarterly beer production") +
+  geom_abline(intercept = 0, slope = 1) +
+  guides(colour = guide_legend(title = "Quarter"))
+
+fourier_beer <- recent_production |> model(TSLM(Beer ~ trend() + fourier(K=2)))
+report(fourier_beer)
+
+aus_cafe <- aus_retail |>
+  filter(Industry == "Cafes, restaurants and takeaway food services",
+         year(Month) %in% 2004:2018) |>
+  summarise(Turnover = sum(Turnover))
+aus_cafe |> autoplot(Turnover)
+
+fit <- aus_cafe |>
+  model(
+    K1 = TSLM(log(Turnover) ~ trend() + fourier(K=1)),
+    K2 = TSLM(log(Turnover) ~ trend() + fourier(K=2)),
+    K3 = TSLM(log(Turnover) ~ trend() + fourier(K=3)),
+    K4 = TSLM(log(Turnover) ~ trend() + fourier(K=4)),
+    K5 = TSLM(log(Turnover) ~ trend() + fourier(K=5)),
+    K6 = TSLM(log(Turnover) ~ trend() + fourier(K=6))
+  )
+
+glance(fit) |>
+  select(.model, r_squared, adj_r_squared, CV, AICc)
+
+# TODO: Put together forecast plots of these
+
+
+# ==== 7.5 Selecting Predictors ====
+
+
+
+
+
+
+
+
 
