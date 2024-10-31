@@ -1,8 +1,11 @@
+
 library(fpp3)
 library(readxl)
 crashes <- read_excel("Datasets/EBR Daily by Hwy Class.xlsx")
+games <- read.csv('Datasets/lsu-schedule-scrape-18-23.csv')
+covid <- read_excel('Datasets/covid variable.xlsx')
 
-
+# ==== Data Import ====
 
 # convert tibble to tsibble (weekly)
 crashes_w <- crashes |>
@@ -19,7 +22,33 @@ crashes_w <- crashes |>
   as_tsibble(index = Week, key = HighwayClass) |>
   ungroup()
 
+# convert games to weekly tsibble
+games_w <- games |>
+  mutate(Week = yearweek(date),
+         home = ifelse(location == 'Home',1,0)) |>
+  group_by(Week) |>
+  summarise(home = sum(home)) |>
+  as_tsibble(index=Week) |>
+  ungroup()
 
+# convert covid to weekly tsibble
+covid_w <- covid |>
+  mutate(Week = yearweek(date)) |>
+  group_by(Week) |>
+  summarise(covid = max(covid)) |>
+  as_tsibble(index=Week) |>
+  ungroup()
+
+
+# ==== Data Combination ====
+crashes_w <- merge(crashes_w,games_w,all = TRUE)
+crashes_w <- merge(crashes_w,covid_w,all = TRUE)
+crashes_w[is.na(crashes_w)] <- 0
+
+crashes_w <- crashes_w |>
+  as_tsibble(index = Week, key = HighwayClass)
+
+# ==== Filtering ====
 crashes_w = crashes_w |>
   mutate(PercentFatal = Fatal/crashCount)
 
@@ -49,10 +78,11 @@ crashes_w |>
 
 # Transformation????
 
+crashes_w_20 <- crashes_w |>
+  filter(HighwayClass == 20)
 
 # Moving Average
-crashes_w_20 <- crashes_w |>
-  filter(HighwayClass == 20) |>
+crashes_w_20 <- crashes_w_20|>
   fill_gaps() |> replace_na(list(crashCount=0)) |>
   mutate(
     `5-MA` = slider::slide_dbl(crashCount, mean, 
@@ -64,6 +94,8 @@ crashes_w_20 <- crashes_w |>
     `26-MA` = slider::slide_dbl(crashCount, mean,
                                  .before = 12, .after = 13, .complete = TRUE)
   )
+
+
 
 # Plotting Moving Averages
 crashes_w_20 |>
@@ -151,4 +183,88 @@ crashes_w_20 |>
   components() |>
   autoplot() + 
   labs(title="Seasonally Adjusted additive decomposition of EBR Hwy Class 20 crashes")
+
+
+# ==== Decomp Forecasting ====
+
+fit_dcmp <- crashes_w_20 |>
+  model(stlf = decomposition_model(
+    STL(crashCount ~ season(window = "periodic") + trend(window = 26), robust = FALSE),
+    SNAIVE(crashCount)
+  ))
+
+
+fc <- fit_dcmp |>
+  forecast(h=10) 
+
+fc|>
+  autoplot(crashes_w_20)+
+  labs(y = "Crashes",
+       title = "EBR Urban 2-Lane Crashes")
+
+fit_dcmp |> gg_tsresiduals()
+
+augment(fit_dcmp) |>
+  ggplot(aes(x = Week)) +
+  geom_line(aes(y = crashCount, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  ) +
+  labs(y = "crashes",
+       title = "EBR Urban 2-Lane Crashes") +
+  guides(colour = guide_legend(title = "Series"))
+
+
+
+# ==== Fourier Analysis ====
+fourier_crash <- crashes_w_20 |>
+  model(TSLM(crashCount ~ trend() + fourier(K = 2)))
+report(fourier_crash)
+
+fcfc <- fourier_crash |>
+  forecast(h=10)
+
+fcfc |> 
+  autoplot(crashes_w_20)
+
+fourier_crash |> gg_tsresiduals()
+
+augment(fourier_crash) |>
+  ggplot(aes(x = Week)) +
+  geom_line(aes(y = crashCount, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  ) +
+  labs(y = "crashes",
+       title = "EBR Urban 2-Lane Crashes Fourier Model") +
+  guides(colour = guide_legend(title = "Series"))
+
+# ==== Exigent Variables ====
+
+fit_game <- crashes_w_20 |> 
+  model(TSLM(crashCount ~ trend() + season_adjust + home + covid))
+
+report(fit_game)
+
+fit_game |> gg_tsresiduals()
+
+augment(fit_game) |>
+  ggplot(aes(x = Week)) +
+  geom_line(aes(y = crashCount, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  ) +
+  labs(y = "crashes",
+       title = "EBR Urban 2-Lane Crashes") +
+  guides(colour = guide_legend(title = "Series"))
+
+
+
+
+
+
+
 
