@@ -40,7 +40,7 @@ lambs |> autoplot(Count)
 
 lambs_mod <- lambs |>
   model(Seasonal_Naive = SNAIVE(Count)) # none very good, but snaive probably best
-                               # maybe filtering to a more recent dataset would help
+# maybe filtering to a more recent dataset would help
 
 lambs_fc <- lambs_mod |>
   forecast(h=10)
