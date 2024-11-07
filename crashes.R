@@ -261,8 +261,27 @@ augment(fit_game) |>
        title = "EBR Urban 2-Lane Crashes") +
   guides(colour = guide_legend(title = "Series"))
 
+crash_resid <- augment(fit_game)$.resid
+
+autoplot(crash_resid)
+
+mean(crashes_w_20$crashCount)
+
+# std error
+sd(crash_resid)/sqrt(nrow(crashes_w_20))  
+
+# RMSE
+sqrt(mean(crash_resid^2))  
+
+# MAPE
+
+# train-test split (80/20)
+# must be done on each input TS variable
 
 
+# ==== ARIMA ====
+# Do 80/20 split
+# Do ARIMA for base time series and for denoised 
 
 
 
