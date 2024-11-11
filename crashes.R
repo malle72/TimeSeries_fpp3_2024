@@ -5,7 +5,7 @@ crashes <- read_excel("Datasets/EBR Daily by Hwy Class.xlsx")
 games <- read.csv('Datasets/lsu-schedule-scrape-18-23.csv')
 covid <- read_excel('Datasets/covid variable.xlsx')
 
-# ==== Data Import ====
+# ==== Data Import and Weekly Conversion ====
 
 # convert tibble to tsibble (weekly)
 crashes_w <- crashes |>

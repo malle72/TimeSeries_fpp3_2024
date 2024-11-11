@@ -195,7 +195,7 @@ caf_fit |> pivot_longer(!Country, names_to = "Model name",
                         values_to = "Orders")
 
 glance(caf_fit) |> arrange(AICc) |> select(.model:BIC)
-# suggested models and stepwise and search models all performed relatively the same
+# suggested, stepwise, and search models all performed relatively the same
 
 caf_fit |>
   select(search) |>
