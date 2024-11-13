@@ -5,6 +5,7 @@ library(readxl)
 crashes <- read_excel("Datasets/EBR Daily by Hwy Class.xlsx")
 games <- read.csv('Datasets/lsu-schedule-scrape-18-23.csv')
 covid <- read_excel('Datasets/covid variable.xlsx')
+holidays <- read.csv('Datasets/holiday_dates_baton_rouge.csv')
 
 # ==== Data Import and Weekly Conversion ====
 
@@ -18,7 +19,9 @@ crashes_w <- crashes |>
     Bicycle = sum(Bicycle),
     NonMotorist = sum(NonMotorist),
     Motorcycle = sum(Motorcycle),
-    Fatal = sum(Fatal)
+    Fatal = sum(Fatal),
+    iceCrashes = sum(iceCrashes),
+    icePresent = ifelse(iceCrashes > 0,1,0)
   ) |>
   as_tsibble(index = Week, key = HighwayClass) |>
   ungroup()
@@ -40,13 +43,20 @@ covid_w <- covid |>
   as_tsibble(index=Week) |>
   ungroup()
 
+# convert holiday to weekly tsibble
+holiday_w <- holidays |>
+  mutate(Week = yearweek(date)) |>
+  group_by(Week) |>
+  summarise(holiday = max(holiday)) |>
+  as_tsibble(index=Week) |>
+  ungroup()
+
 # ==== Data Combination ====
 crashes_w <- merge(crashes_w,games_w,all = TRUE)
 crashes_w <- merge(crashes_w,covid_w,all = TRUE)
-crashes_w[is.na(crashes_w)] <- 0
+crashes_w <- merge(crashes_w,holiday_w,all = TRUE)
 
-crashes_w <- crashes_w |>
-  as_tsibble(index = Week, key = HighwayClass)
+crashes_w[is.na(crashes_w)] <- 0
 
 
 # ==== Data Selection and Mutation====
@@ -56,7 +66,10 @@ crashes_w <- crashes_w |>
 hwy = 20
 crashes_w_hwy <- crashes_w |> 
   filter(HighwayClass == hwy) |>
-  fill_gaps() |> replace_na(list(crashCount=0))
+  replace_na(list(crashCount=0))
+
+crashes_w_hwy <- crashes_w_hwy |>
+  as_tsibble(index = Week)
 
 # ==== Exploration ====
 
@@ -74,10 +87,10 @@ crashes_w_hwy |>
   gg_subseries(crashCount)
 # Autocorrelation
 crashes_w_hwy |>
-  ACF(crashCount,lag_max = 52) |>
+  ACF(crashCount,lag_max = 104) |>
   autoplot()
 # White noise testing
-crashes_w_hwy |> features(crashCount,ljung_box) # Try a specifc lag value if the default is bad. 
+crashes_w_hwy |> features(crashCount,ljung_box,lag=26) # Try a specifc lag value if the default is bad. 
 # Stationarity testing
 crashes_w_hwy |> features(crashCount,list(unitroot_kpss,unitroot_ndiffs,unitroot_nsdiffs))
 
@@ -108,6 +121,7 @@ crashes_w_hwy |>
        color = 'Moving Averages')
 
 # ==== Decomposition ====
+# Classical Decomp Multiplicative
 crashes_w_hwy |>
   model(
     classical_decomposition(crashCount, type = 'multiplicative')
@@ -115,6 +129,7 @@ crashes_w_hwy |>
   components() |>
   autoplot() + 
   labs(title="Classical multiplicative decomposition of EBR Hwy Class 20 crashes")
+# Classical Decomp Additive
 crashes_w_hwy |>
   model(
     classical_decomposition(crashCount, type = 'additive')
@@ -122,13 +137,27 @@ crashes_w_hwy |>
   components() |>
   autoplot() + 
   labs(title="Classical additive decomposition of EBR Hwy Class 20 crashes")
+# STL Decomp
+crashes_w_hwy |>
+  model(
+    STL(crashCount)
+  ) |>
+  components() |>
+  autoplot() + 
+  labs(title="STL decomposition of EBR Hwy Class 20 crashes")
 
-dcmp <- crashes_w_hwy |> model(classical_decomposition(crashCount,type='additive'))
+dcmp_add <- crashes_w_hwy |> model(classical_decomposition(crashCount,type='additive'))
+dcmp_multi <- crashes_w_hwy |> model(classical_decomposition(crashCount,type='multiplicative'))
+stl_dcmp <- crashes_w_hwy |> model(STL(crashCount))
 
 # Add decomp related vars to the dataset
 crashes_w_hwy <- crashes_w_hwy |>
-  mutate(dn_crashes = crashCount - components(dcmp)$random,
-         season_adjust = components(dcmp)$season_adjust)
+  mutate(dn_crashes = crashCount - components(dcmp_add)$random,         # denoised data (additive)
+         season_adjust = components(dcmp_add)$season_adjust,            # seasonally adjusted (additive)
+         dn_multi = crashCount - components(dcmp_multi)$random,         # denoised data (multi)
+         season_adjust_multi = components(dcmp_multi)$season_adjust,    # seasonally adjusted (multi)
+         stl_dn_crashes = crashCount - components(stl_dcmp)$remainder,  # STL denoised data
+         stl_season_adjust = components(stl_dcmp)$season_adjust)        # STL seasonally adjusted
 
 # ==== Train-Test Split ====
 p = 0.20
@@ -158,11 +187,15 @@ accuracy(bnch_fc,test)
 
 # ======== Model Fit - TSLM w/vars ========
 fit_tslm <- train |>
-  model(TSLM(crashCount ~ trend() + season() + home + covid))
+  model(tslm_base = TSLM(crashCount ~ trend() + season() + home + covid + icePresent),
+        tslm_inter = TSLM(crashCount ~ trend() * season() + home + covid + icePresent)
+)
 
-report(fit_tslm)
+glance(fit_tslm) |> arrange(AICc) |> select(.model:BIC)
 
-fit_tslm |> gg_tsresiduals()
+fit_tslm |> select(tslm_base) |> gg_tsresiduals()
+fit_tslm |> select(tslm_inter) |> gg_tsresiduals()
+
 
 # -=-=-=- Forecast and Test -=-=-=-
 fit_tslm |> 
@@ -183,7 +216,7 @@ fit_train <- train |>
         search = ARIMA(crashCount, stepwise = FALSE))
 
 glance(fit_train) |> arrange(AICc) |> select(.model:BIC)
-
+# Determine which model is best and explore it further
 fit_train |> select(search) |> gg_tsresiduals()
 fit_train |> select(search) |>
   augment() |>
@@ -201,18 +234,29 @@ fc_fit_train <- fit_train |>
   forecast(test)
 accuracy(fc_fit_train,test)
 
+fit_train |> select(search) |>
+augment() |>
+  ggplot(aes(x = Week)) +
+  geom_line(aes(y = crashCount, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  )
 
-# ======== Model Fit - ARIMA + Vars ========
+
+
+# ======== Model Fit - ARIMA w/ Vars ========
 fit_ar_vars <- train |> 
-  model(stepwise = ARIMA(crashCount ~ season_adjust + home + covid),
-        search = ARIMA(crashCount ~ season_adjust + home + covid, stepwise = FALSE),
-        stepwise_trend = ARIMA(crashCount ~ trend() + season_adjust + home + covid),
-        search_trend = ARIMA(crashCount ~ trend() + season_adjust + home + covid, stepwise = FALSE))
+  model(searchFull_ic = ARIMA(crashCount ~ trend() + season() + home + covid + iceCrashes),
+        searchFull_ip = ARIMA(crashCount ~ trend() + season() + home + covid + icePresent))
 
 glance(fit_ar_vars) |> arrange(AICc) |> select(.model:BIC)
 
-fit_ar_vars |> select(search) |> gg_tsresiduals()
-fit_ar_vars |> select(search) |>
+fit_ar_vars |> augment() |>
+  features(.innov,ljung_box)
+# Determine which model is best and explore it further
+fit_ar_vars |> select(searchFull_ic) |> gg_tsresiduals()
+fit_ar_vars |> select(searchFull_ic) |>
   augment() |>
   features(.innov,ljung_box,lag=26)
 
@@ -228,7 +272,8 @@ fc_fit_ar_vars <- fit_ar_vars |>
   forecast(test)
 accuracy(fc_fit_ar_vars,test)
 
-augment(fit_ar_vars) |>
+fit_ar_vars |> select(searchFull_ic) |>
+augment() |>
   ggplot(aes(x = Week)) +
   geom_line(aes(y = crashCount, colour = "Data")) +
   geom_line(aes(y = .fitted, colour = "Fitted")) +
@@ -236,7 +281,140 @@ augment(fit_ar_vars) |>
     values = c(Data = "black", Fitted = "#D55E00")
   )
 
+# ======== Model Fit - Seasonal Difference ARIMA ========
+fit_sdif <- train |> 
+  model(stepwise_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid),
+        search_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid, stepwise = FALSE))
+
+glance(fit_sdif) |> arrange(AICc) |> select(.model:BIC)
+
+fit_sdif |> augment() |>
+  features(.innov,ljung_box)
+# Determine which model is best and explore it further
+fit_sdif |> select(search_sdif) |> gg_tsresiduals()
+fit_sdif |> select(search_sdif) |>
+  augment() |>
+  features(.innov,ljung_box,lag=26)
+
+# -=-=-=- Forecast and Test -=-=-=-
+fit_sdif |> 
+  forecast(test) |>
+  autoplot(train,level=NULL)  # plot ahead from training
+fit_sdif |> 
+  forecast(test) |>
+  autoplot(bind_rows(train,test),level=NULL)  # plot with full data
+
+fc_fit_sdif <- fit_sdif |>
+  forecast(test)
+accuracy(fc_fit_sdif,test)
 
 
+# ======== Model Fit - ARIMA | denoise ~ Vars ========
+fit_ar_dn <- train |> 
+  model(stepwise_dn = ARIMA(dn_crashes ~ trend() + season() + home + covid),
+        search_dn = ARIMA(dn_crashes ~ trend() + season() + home + covid, stepwise = FALSE),
+        stepwise_dn_multi = ARIMA(dn_multi ~ trend() + season() + home + covid),
+        search_dn_multi = ARIMA(dn_multi ~ trend() + season() + home + covid, stepwise = FALSE))
+
+glance(fit_ar_dn) |> arrange(AICc) |> select(.model:BIC)
+
+fit_ar_dn |> augment() |>
+  features(.innov,ljung_box)
+# Determine which model is best and explore it further
+fit_ar_dn |> select(search_dn) |> gg_tsresiduals()
+fit_ar_dn |> select(search_dn) |>
+  augment() |>
+  features(.innov,ljung_box,lag=26)
+
+# -=-=-=- Forecast and Test -=-=-=-
+fit_ar_dn |> 
+  forecast(test) |>
+  autoplot(train,level=NULL)  # plot ahead from training
+fit_ar_dn |> 
+  forecast(test) |>
+  autoplot(bind_rows(train,test),level=NULL)  # plot with full data
+
+fc_fit_ar_dn <- fit_ar_dn |>
+  forecast(test)
+accuracy(fc_fit_ar_dn,test)
+
+augment(fit_ar_dn) |>
+  ggplot(aes(x = Week)) +
+  geom_line(aes(y = dn_crashes, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  )
+
+# ======== Model Fit - ARIMA | stl denoise ~ Vars ========
+fit_ar_stl_dn <- train |> 
+  model(stepwise_stl_dn = ARIMA(stl_dn_crashes ~ trend() + season() + home + covid),
+        search_stl_dn = ARIMA(stl_dn_crashes ~ trend() + season() + home + covid, stepwise = FALSE))
+
+glance(fit_ar_stl_dn) |> arrange(AICc) |> select(.model:BIC)
+
+fit_ar_stl_dn |> augment() |>
+  features(.innov,ljung_box)
+# Determine which model is best and explore it further
+fit_ar_stl_dn |> select(search_stl_dn) |> gg_tsresiduals()
+fit_ar_stl_dn |> select(search_stl_dn) |>
+  augment() |>
+  features(.innov,ljung_box,lag=26)
+
+# -=-=-=- Forecast and Test -=-=-=-
+fit_ar_stl_dn |> 
+  forecast(test) |>
+  autoplot(train,level=NULL)  # plot ahead from training
+fit_ar_stl_dn |> 
+  forecast(test) |>
+  autoplot(bind_rows(train,test),level=NULL)  # plot with full data
+
+fc_fit_ar_stl_dn <- fit_ar_stl_dn |>
+  forecast(test)
+accuracy(fc_fit_ar_stl_dn,test)
+
+augment(fit_ar_stl_dn) |>
+  ggplot(aes(x = Week)) +
+  geom_line(aes(y = stl_dn_crashes, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  )
+
+
+# ======== Model Fit - Neural Net ========
+fit_nn <- train |> 
+  model(nn_base = NNETAR(crashCount))
+
+glance(fit_nn) |> arrange(AICc) |> select(.model:BIC)
+
+fit_nn |> augment() |>
+  features(.innov,ljung_box)
+# Determine which model is best and explore it further
+fit_nn |> select(nn_base) |> gg_tsresiduals()
+fit_nn |> select(nn_base) |>
+  augment() |>
+  features(.innov,ljung_box,lag=26)
+
+# -=-=-=- Forecast and Test -=-=-=-
+fit_nn |> 
+  forecast(test) |>
+  autoplot(train,level=NULL)  # plot ahead from training
+fit_nn |> 
+  forecast(test) |>
+  autoplot(bind_rows(train,test),level=NULL)  # plot with full data
+
+fc_fit_nn <- fit_nn |>
+  forecast(test)
+accuracy(fc_fit_nn,test)
+
+fit_nn |> select(searchFull_ic) |>
+  augment() |>
+  ggplot(aes(x = Week)) +
+  geom_line(aes(y = crashCount, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  scale_colour_manual(
+    values = c(Data = "black", Fitted = "#D55E00")
+  )
 
 
