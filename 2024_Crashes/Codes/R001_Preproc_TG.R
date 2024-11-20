@@ -1,23 +1,22 @@
-# ---- Regular Crash Count ----
+#================== Loading Packages and Data, Setting paths ===========================
+library(easypackages)
+libraries("urca","fpp3","tidyverse","readxl")
 
-
-library(urca)
-library(fpp3)
-library(readxl)
-crashes <- read_excel("Datasets/EBR Daily by Hwy Class.xlsx")
-games <- read.csv('Datasets/lsu-schedule-scrape-18-23.csv')
-covid <- read_excel('Datasets/covid variable.xlsx')
-holidays <- read.csv('Datasets/holiday_dates_baton_rouge.csv')
-graph_path4a <- "graphs/4a/"
+Crashes <- read_excel("./Data/EBR Daily by Hwy Class.xlsx")
+Games <- read.csv('./Data/lsu-schedule-scrape-18-23.csv')
+Covid <- read_excel('./Data/covid variable.xlsx')
+Holidays <- read.csv('./Data/holiday_dates_baton_rouge.csv')
 
 graph_save <- function(graph,graph_name,graph_path) {
   ggsave(paste0(graph_path,graph_name,".jpg"),graph,width=15,height=8)
 }
 
-# ==== Data Import and Weekly Conversion ====
+#=================== Data Pre-processing ================================
 
-# convert tibble to tsibble (weekly)
-crashes_w <- crashes |>
+#===== Convert to Weekly Data Tibbles ========
+
+#===== Crashes 
+Crashes_w <- Crashes |>
   mutate(Week = yearweek(CrashDate)) |>
   group_by(Week, HighwayClass) |>
   summarise(
@@ -33,8 +32,8 @@ crashes_w <- crashes |>
   as_tsibble(index = Week, key = HighwayClass) |>
   ungroup()
 
-# convert games to weekly tsibble
-games_w <- games |>
+#===== Games
+Games_w <- Games |>
   mutate(Week = yearweek(date),
          home = ifelse(location == 'Home',1,0)) |>
   group_by(Week) |>
@@ -42,16 +41,16 @@ games_w <- games |>
   as_tsibble(index=Week) |>
   ungroup()
 
-# convert covid to weekly tsibble
-covid_w <- covid |>
+#===== Covid 
+Covid_w <- Covid |>
   mutate(Week = yearweek(date)) |>
   group_by(Week) |>
   summarise(covid = max(covid)) |>
   as_tsibble(index=Week) |>
   ungroup()
 
-# convert holiday to weekly tsibble
-holiday_w <- holidays |>
+#===== Holiday 
+Holiday_w <- Holidays |>
   mutate(Week = yearweek(date)) |>
   group_by(Week) |>
   summarise(holiday = max(holiday)) |>
@@ -59,55 +58,24 @@ holiday_w <- holidays |>
   ungroup()
 
 # ==== Data Combination ====
-crashes_w <- merge(crashes_w,games_w,all = TRUE)
-crashes_w <- merge(crashes_w,covid_w,all = TRUE)
-crashes_w <- merge(crashes_w,holiday_w,all = TRUE)
+tables_list=list(Crashes_w,Games_w,Covid_w,Holiday_w)
+Crashes_w <- tables_list |> 
+  reduce(left_join, by = c("Week"))|>
+  mutate(across(everything(), ~ replace_na(., 0)))
 
-crashes_w[is.na(crashes_w)] <- 0
 
 
 # ==== Data Selection and Mutation====
 # Select a Highway Class (integer between 1 and 43)
 # Note: Not all have good data or create good forecasts
-
 hwy = 20
-crashes_w_hwy <- crashes_w |> 
-  filter(HighwayClass == hwy) |>
-  replace_na(list(crashCount=0))
 
-crashes_w_hwy <- crashes_w_hwy |>
+Crashes_w_hwy <- Crashes_w |> 
+  filter(HighwayClass == hwy) |>
   as_tsibble(index = Week)
 
-# ==== Exploration ====
-
-cc_byDay <- crashes |> filter(HighwayClass == 20) |>
-  mutate(CrashDate = date(CrashDate)) |>
-  as_tsibble(index=CrashDate) |>
-  autoplot(crashCount)
-cc_byDay
-graph_save(cc_byDay,'CrashCountByDay',graph_path3a)
-# Plot crashes
-tot_crash<-crashes_w_hwy |> autoplot(crashCount) +
-  labs(title='Crashes on Urban 2-lane in EBR')
-tot_crash
-graph_save(tot_crash,'TotalCrashes',graph_path3a)
-# Lagged data
-crashes_w_hwy |>
-  gg_lag(crashCount, geom = 'point', lags = c(5,10,15,20,26,30,35,40,45,50,52,60))
-# Autocorrelation
-cc_ac <- crashes_w_hwy |>
-  ACF(crashCount,lag_max = 104) |>
-  autoplot()
-cc_ac
-graph_save(cc_ac, 'CrashCountAutoCorrelation',graph_path3a)
-# White noise testing
-crashes_w_hwy |> features(crashCount,ljung_box,lag=26) # Try a specifc lag value if the default is bad. 
-# Stationarity testing
-crashes_w_hwy |> features(crashCount,list(unitroot_kpss,unitroot_ndiffs,unitroot_nsdiffs))
-
 # ==== Moving Average ====
-
-crashes_w_hwy <- crashes_w_hwy |>
+Crashes_w_hwy <- Crashes_w_hwy |>
   mutate(
     `5-MA` = slider::slide_dbl(crashCount, mean, 
                                .before = 2, .after = 2, .complete = TRUE),
@@ -119,6 +87,44 @@ crashes_w_hwy <- crashes_w_hwy |>
                                 .before = 12, .after = 13, .complete = TRUE)
   )
 
+
+# ==== Exploration ====
+graph_path="./Results/Graphs/Exploration/"
+
+cc_byDay <- Crashes |> filter(HighwayClass == 20) |>
+  mutate(CrashDate = date(CrashDate)) |>
+  as_tsibble(index=CrashDate) |>
+  autoplot(crashCount)
+cc_byDay
+graph_save(cc_byDay,'CrashCountByDay',graph_path)
+
+# Plot crashes
+tot_crash<-Crashes_w_hwy |> autoplot(crashCount) +
+  labs(title='Crashes on Urban 2-lane in EBR')
+tot_crash
+graph_save(tot_crash,'TotalCrashes',graph_path)
+
+
+# Lagged data
+Lagged_Crashes=Crashes_w_hwy |>
+  gg_lag(crashCount, geom = 'point', lags = c(5,10,15,20,26,30,35,40,45,50,52,60))
+graph_save(Lagged_Crashes,'LaggedCrashes',graph_path)
+
+# Autocorrelation
+cc_ac <- Crashes_w_hwy |>
+  ACF(crashCount,lag_max = 104) |>
+  autoplot()
+cc_ac
+graph_save(cc_ac, 'CrashCountAutoCorrelation',graph_path)
+
+
+# White noise testing
+Crashes_w_hwy |> features(crashCount,ljung_box,lag=26) # Try a specifc lag value if the default is bad. 
+# Stationarity testing
+Crashes_w_hwy |> features(crashCount,list(unitroot_kpss,unitroot_ndiffs,unitroot_nsdiffs))
+
+
+# Moving average graphs
 cc_ma <- crashes_w_hwy |>
   autoplot(crashCount, color='grey') +
   geom_line(aes(y = `5-MA`, color = "5-MA")) +
@@ -171,37 +177,3 @@ crashes_w_hwy <- crashes_w_hwy |>
          season_adjust_multi = components(dcmp_multi)$season_adjust,    # seasonally adjusted (multi)
          stl_dn_crashes = crashCount - components(stl_dcmp)$remainder,  # STL denoised data
          stl_season_adjust = components(stl_dcmp)$season_adjust)        # STL seasonally adjusted
-
-# ==== Train-Test Split ====
-p = 0.20
-k = round(nrow(crashes_w_hwy)*p)
-l=nrow(crashes_w_hwy)-k
-train = crashes_w_hwy[1:l,]
-test = crashes_w_hwy[(l+1):nrow(crashes_w_hwy),]
-freq=365.25
-
-# ==== Model Fits ====
-
-fit_4a <- train |>
-  model(naive = NAIVE(crashCount),
-        snaive = SNAIVE(crashCount),
-        drift = RW(crashCount ~ drift()),
-        tslm_base = TSLM(crashCount ~ trend() + season()),
-        tslm_inter = TSLM(crashCount ~ trend() + season() + trend() * season() + home + covid + icePresent),
-        tslm_vars = TSLM(crashCount ~ trend() + season() + home + covid + holiday + icePresent),
-        arima_plain = ARIMA(crashCount, stepwise = TRUE),
-        arima_full = ARIMA(crashCount ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
-        arima_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
-        nn_base = NNETAR(crashCount, n_networks = 10),
-        nn_vars = NNETAR(crashCount~ home + covid + holiday + icePresent, n_networks = 10)
-  )
-
-
-# ==== Model Evaluation ====
-glance(fit_4a) |> arrange(AICc) |> select(.model:BIC)
-accuracy(fit_4a)
-
-fc_4a <- fit_4a |> forecast(test)
-ac_4a <- accuracy(fc_4a,test) |> arrange(RMSE)
-ac_4a
-
