@@ -319,8 +319,8 @@ Ac5
 fit_ar_dn <- train |> 
   model(stepwise_dn = ARIMA(dn_crashes ~ trend() + season() + home + covid),
         search_dn = ARIMA(dn_crashes ~ trend() + season() + home + covid, stepwise = FALSE),
-        stepwise_dn_multi = ARIMA(dn_multi ~ trend() + season() + home + covid),
-        search_dn_multi = ARIMA(dn_multi ~ trend() + season() + home + covid, stepwise = FALSE))
+        stepwise_dn_multi = ARIMA(dn_crashes ~ trend() + season() + home + covid),
+        search_dn_multi = ARIMA(dn_crashes ~ trend() + season() + home + covid, stepwise = FALSE))
 
 glance(fit_ar_dn) |> arrange(AICc) |> select(.model:BIC)
 
@@ -354,16 +354,18 @@ augment(fit_ar_dn) |>
 
 # ======== Model Fit - ARIMA | stl denoise ~ Vars ========
 fit_ar_stl_dn <- train |> 
-  model(stepwise_stl_dn = ARIMA(stl_dn_crashes ~ trend() + season() + home + covid),
-        search_stl_dn = ARIMA(stl_dn_crashes ~ trend() + season() + home + covid, stepwise = FALSE))
+  model(stepwise_stl_dn = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home + covid),
+        search_stl_dn = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home + covid, stepwise = FALSE),
+        search_stl_dn_full = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home + covid + holiday, stepwise = FALSE),
+        search_stl_dn_no_cov = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home, stepwise = FALSE))
 
 glance(fit_ar_stl_dn) |> arrange(AICc) |> select(.model:BIC)
 
 fit_ar_stl_dn |> augment() |>
   features(.innov,ljung_box)
 # Determine which model is best and explore it further
-fit_ar_stl_dn |> select(search_stl_dn) |> gg_tsresiduals()
-fit_ar_stl_dn |> select(search_stl_dn) |>
+fit_ar_stl_dn |> select(search_stl_dn_no_cov) |> gg_tsresiduals()
+fit_ar_stl_dn |> select(search_stl_dn_no_cov) |>
   augment() |>
   features(.innov,ljung_box,lag=26)
 
@@ -379,7 +381,8 @@ fc_fit_ar_stl_dn <- fit_ar_stl_dn |>
   forecast(test)
 accuracy(fc_fit_ar_stl_dn,test)
 
-augment(fit_ar_stl_dn) |>
+fit_ar_stl_dn |> select(search_stl_dn_no_cov) |>
+augment() |>
   ggplot(aes(x = Week)) +
   geom_line(aes(y = stl_dn_crashes, colour = "Data")) +
   geom_line(aes(y = .fitted, colour = "Fitted")) +
