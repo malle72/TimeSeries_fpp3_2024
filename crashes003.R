@@ -412,7 +412,8 @@ fit_nn |>
 
 fc_fit_nn <- fit_nn |>
   forecast(test)
-accuracy(fc_fit_nn,test)
+Ac6=accuracy(fc_fit_nn,test)
+Ac6
 
 fit_nn |> select(searchFull_ic) |>
   augment() |>
