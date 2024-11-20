@@ -1,3 +1,4 @@
+# ---- Regular Crash Count ----
 
 library(urca)
 library(fpp3)
@@ -6,6 +7,11 @@ crashes <- read_excel("Datasets/EBR Daily by Hwy Class.xlsx")
 games <- read.csv('Datasets/lsu-schedule-scrape-18-23.csv')
 covid <- read_excel('Datasets/covid variable.xlsx')
 holidays <- read.csv('Datasets/holiday_dates_baton_rouge.csv')
+graph_path3a <- "graphs/3a/"
+
+graph_save <- function(graph,graph_name,graph_path) {
+  ggsave(paste0(graph_path,graph_name,".jpg"),graph,width=15,height=8)
+}
 
 # ==== Data Import and Weekly Conversion ====
 
@@ -73,22 +79,26 @@ crashes_w_hwy <- crashes_w_hwy |>
 
 # ==== Exploration ====
 
+cc_byDay <- crashes |> filter(HighwayClass == 20) |>
+  mutate(CrashDate = date(CrashDate)) |>
+  as_tsibble(index=CrashDate) |>
+  autoplot(crashCount)
+cc_byDay
+graph_save(cc_byDay,'CrashCountByDay',graph_path3a)
 # Plot crashes
-crashes_w_hwy |> autoplot(crashCount) +
+tot_crash<-crashes_w_hwy |> autoplot(crashCount) +
   labs(title='Crashes on Urban 2-lane in EBR')
-# Crashes across seasons
-crashes_w_hwy |> 
-  gg_season(crashCount)
+tot_crash
+graph_save(tot_crash,'TotalCrashes',graph_path3a)
 # Lagged data
 crashes_w_hwy |>
   gg_lag(crashCount, geom = 'point', lags = c(5,10,15,20,26,30,35,40,45,50,52,60))
-# Subseries
-crashes_w_hwy |>
-  gg_subseries(crashCount)
 # Autocorrelation
-crashes_w_hwy |>
+cc_ac <- crashes_w_hwy |>
   ACF(crashCount,lag_max = 104) |>
   autoplot()
+cc_ac
+graph_save(cc_ac, 'CrashCountAutoCorrelation',graph_path3a)
 # White noise testing
 crashes_w_hwy |> features(crashCount,ljung_box,lag=26) # Try a specifc lag value if the default is bad. 
 # Stationarity testing
@@ -108,7 +118,7 @@ crashes_w_hwy <- crashes_w_hwy |>
                                 .before = 12, .after = 13, .complete = TRUE)
   )
 
-crashes_w_hwy |>
+cc_ma <- crashes_w_hwy |>
   autoplot(crashCount, color='grey') +
   geom_line(aes(y = `5-MA`, color = "5-MA")) +
   geom_line(aes(y = `4-MA`, color = "4-MA")) +
@@ -119,6 +129,8 @@ crashes_w_hwy |>
   labs(y = 'Crashes',
        title = 'EBR Hwy Class 20 Moving Avg Crashes',
        color = 'Moving Averages')
+cc_ma
+graph_save(cc_ma,'MovingAvgs',graph_path3a)
 
 # ==== Decomposition ====
 # Classical Decomp Multiplicative
@@ -168,73 +180,77 @@ test = crashes_w_hwy[(l+1):nrow(crashes_w_hwy),]
 freq=365.25
 
 # ==== Benchmarks ====
-bnch <- train |> 
+bnch3a <- train |> 
   model(naive = NAIVE(crashCount),
         snaive = SNAIVE(crashCount),
         drift = RW(crashCount ~ drift()))
 
-bnch |> 
+bnch3a |> 
   forecast(test) |>
   autoplot(train,level=NULL)  # plot ahead from training
-bnch |> 
+bnch3a |> 
   forecast(test) |>
   autoplot(bind_rows(train,test),level=NULL)  # plot with full data
 
-bnch_fc <- bnch |>
+bnch_fc_3a <- bnch3a |>
   forecast(test)
 
-accuracy(bnch_fc,test)
-
+ac_bnch_3a<-accuracy(bnch_fc_3a,test)
+ac_bnch_3a
 # ======== Model Fit - TSLM w/vars ========
-fit_tslm <- train |>
-  model(tslm_base = TSLM(crashCount ~ trend() + season() + home + covid + icePresent),
-        tslm_inter = TSLM(crashCount ~ trend() * season() + home + covid + icePresent)
+
+fit_tslm_3a <- train |>
+  model(tslm_base = TSLM(crashCount ~ trend() + season()),
+        tslm_inter = TSLM(crashCount ~ trend() + season() + trend() * season() + home + covid + icePresent),
+        tslm_vars = TSLM(crashCount ~ trend() + season() + home + covid + holiday + icePresent)
 )
 
-glance(fit_tslm) |> arrange(AICc) |> select(.model:BIC)
+glance(fit_tslm_3a) |> arrange(AICc) |> select(.model:BIC)
 
-fit_tslm |> select(tslm_base) |> gg_tsresiduals()
-fit_tslm |> select(tslm_inter) |> gg_tsresiduals()
+fit_tslm_3a |> select(tslm_base) |> gg_tsresiduals()
+fit_tslm_3a |> select(tslm_inter) |> gg_tsresiduals()
+fit_tslm_3a |> select(tslm_vars) |> gg_tsresiduals()
+
 
 
 # -=-=-=- Forecast and Test -=-=-=-
-fit_tslm |> 
+fit_tslm_3a |> select(tslm_vars) |>
   forecast(test) |>
   autoplot(train,level=NULL)  # plot ahead from training
-fit_tslm |> 
+fit_tslm_3a |> select(tslm_vars) |>
   forecast(test) |>
   autoplot(bind_rows(train,test),level=NULL)  # plot with full data
 
-tslm_fc <- fit_tslm |>
+tslm_fc_3a <- fit_tslm_3a |>
   forecast(test)
-accuracy(tslm_fc,test)
-
+ac_tslm_3a <- accuracy(tslm_fc_3a,test) |> arrange(RMSE)
+ac_tslm_3a
 
 # ======== Model Fit - Plain ARIMA ========
-fit_train <- train |> 
+fit_train_3a <- train |> 
   model(stepwise = ARIMA(crashCount),
         search = ARIMA(crashCount, stepwise = FALSE))
 
-glance(fit_train) |> arrange(AICc) |> select(.model:BIC)
+glance(fit_train_3a) |> arrange(AICc) |> select(.model:BIC)
 # Determine which model is best and explore it further
-fit_train |> select(search) |> gg_tsresiduals()
-fit_train |> select(search) |>
+fit_train_3a |> select(search) |> gg_tsresiduals()
+fit_train_3a |> select(search) |>
   augment() |>
   features(.innov,ljung_box,lag=26)
 
 # -=-=-=- Forecast and Test -=-=-=-
-fit_train |> 
+fit_train_3a |> 
   forecast(test) |>
   autoplot(train,level=NULL)  # plot ahead from training
-fit_train |> 
+fit_train_3a |> 
   forecast(test) |>
   autoplot(bind_rows(train,test),level=NULL)  # plot with full data
 
-fc_fit_train <- fit_train |>
+fc_fit_train_3a <- fit_train_3a |>
   forecast(test)
-accuracy(fc_fit_train,test)
+accuracy(fc_fit_train_3a,test)
 
-fit_train |> select(search) |>
+fit_train_3a |> select(search) |>
 augment() |>
   ggplot(aes(x = Week)) +
   geom_line(aes(y = crashCount, colour = "Data")) +
@@ -246,33 +262,32 @@ augment() |>
 
 
 # ======== Model Fit - ARIMA w/ Vars ========
-fit_ar_vars <- train |> 
-  model(searchFull_ic = ARIMA(crashCount ~ trend() + season() + home + covid + iceCrashes),
-        searchFull_ip = ARIMA(crashCount ~ trend() + season() + home + covid + icePresent))
+fit_ar_vars_3a <- train |> 
+  model(searchFull_ip = ARIMA(crashCount ~ trend() + season() + home + covid + holiday + icePresent))
 
-glance(fit_ar_vars) |> arrange(AICc) |> select(.model:BIC)
+glance(fit_ar_vars_3a) |> arrange(AICc) |> select(.model:BIC)
 
-fit_ar_vars |> augment() |>
+fit_ar_vars_3a |> augment() |>
   features(.innov,ljung_box)
 # Determine which model is best and explore it further
-fit_ar_vars |> select(searchFull_ic) |> gg_tsresiduals()
-fit_ar_vars |> select(searchFull_ic) |>
+fit_ar_vars_3a |> select(searchFull_ip) |> gg_tsresiduals()
+fit_ar_vars_3a |> select(searchFull_ip) |>
   augment() |>
   features(.innov,ljung_box,lag=26)
 
 # -=-=-=- Forecast and Test -=-=-=-
-fit_ar_vars |> 
+fit_ar_vars_3a |> 
   forecast(test) |>
   autoplot(train,level=NULL)  # plot ahead from training
-fit_ar_vars |> 
+fit_ar_vars_3a |> 
   forecast(test) |>
   autoplot(bind_rows(train,test),level=NULL)  # plot with full data
 
-fc_fit_ar_vars <- fit_ar_vars |>
+fc_fit_ar_vars_3a <- fit_ar_vars_3a |>
   forecast(test)
-accuracy(fc_fit_ar_vars,test)
+accuracy(fc_fit_ar_vars_3a,test)
 
-fit_ar_vars |> select(searchFull_ic) |>
+fit_ar_vars_3a |> select(searchFull_ip) |>
 augment() |>
   ggplot(aes(x = Week)) +
   geom_line(aes(y = crashCount, colour = "Data")) +
@@ -282,107 +297,31 @@ augment() |>
   )
 
 # ======== Model Fit - Seasonal Difference ARIMA ========
-fit_sdif <- train |> 
-  model(stepwise_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid),
-        search_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid, stepwise = FALSE))
+fit_sdif_3a <- train |> 
+  model(stepwise_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
+        search_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = FALSE))
 
-glance(fit_sdif) |> arrange(AICc) |> select(.model:BIC)
+glance(fit_sdif_3a) |> arrange(AICc) |> select(.model:BIC)
 
-fit_sdif |> augment() |>
+fit_sdif_3a |> augment() |>
   features(.innov,ljung_box)
 # Determine which model is best and explore it further
-fit_sdif |> select(search_sdif) |> gg_tsresiduals()
-fit_sdif |> select(search_sdif) |>
+fit_sdif_3a |> select(search_sdif) |> gg_tsresiduals()
+fit_sdif_3a |> select(search_sdif) |>
   augment() |>
   features(.innov,ljung_box,lag=26)
 
 # -=-=-=- Forecast and Test -=-=-=-
-fit_sdif |> 
+fit_sdif_3a |> 
   forecast(test) |>
   autoplot(train,level=NULL)  # plot ahead from training
-fit_sdif |> 
+fit_sdif_3a |> 
   forecast(test) |>
   autoplot(bind_rows(train,test),level=NULL)  # plot with full data
 
-fc_fit_sdif <- fit_sdif |>
+fc_fit_sdif_3a <- fit_sdif_3a |>
   forecast(test)
-accuracy(fc_fit_sdif,test)
-
-
-# ======== Model Fit - ARIMA | denoise ~ Vars ========
-fit_ar_dn <- train |> 
-  model(stepwise_dn = ARIMA(dn_crashes ~ trend() + season() + home + covid),
-        search_dn = ARIMA(dn_crashes ~ trend() + season() + home + covid, stepwise = FALSE),
-        stepwise_dn_multi = ARIMA(dn_crashes ~ trend() + season() + home + covid),
-        search_dn_multi = ARIMA(dn_crashes ~ trend() + season() + home + covid, stepwise = FALSE))
-
-glance(fit_ar_dn) |> arrange(AICc) |> select(.model:BIC)
-
-fit_ar_dn |> augment() |>
-  features(.innov,ljung_box)
-# Determine which model is best and explore it further
-fit_ar_dn |> select(search_dn) |> gg_tsresiduals()
-fit_ar_dn |> select(search_dn) |>
-  augment() |>
-  features(.innov,ljung_box,lag=26)
-
-# -=-=-=- Forecast and Test -=-=-=-
-fit_ar_dn |> 
-  forecast(test) |>
-  autoplot(train,level=NULL)  # plot ahead from training
-fit_ar_dn |> 
-  forecast(test) |>
-  autoplot(bind_rows(train,test),level=NULL)  # plot with full data
-
-fc_fit_ar_dn <- fit_ar_dn |>
-  forecast(test)
-accuracy(fc_fit_ar_dn,test)
-
-augment(fit_ar_dn) |>
-  ggplot(aes(x = Week)) +
-  geom_line(aes(y = dn_crashes, colour = "Data")) +
-  geom_line(aes(y = .fitted, colour = "Fitted")) +
-  scale_colour_manual(
-    values = c(Data = "black", Fitted = "#D55E00")
-  )
-
-# ======== Model Fit - ARIMA | stl denoise ~ Vars ========
-fit_ar_stl_dn <- train |> 
-  model(stepwise_stl_dn = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home + covid),
-        search_stl_dn = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home + covid, stepwise = FALSE),
-        search_stl_dn_full = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home + covid + holiday, stepwise = FALSE),
-        search_stl_dn_no_cov = ARIMA(stl_dn_crashes ~ 1 + trend() + season() + home, stepwise = FALSE))
-
-glance(fit_ar_stl_dn) |> arrange(AICc) |> select(.model:BIC)
-
-fit_ar_stl_dn |> augment() |>
-  features(.innov,ljung_box)
-# Determine which model is best and explore it further
-fit_ar_stl_dn |> select(search_stl_dn_no_cov) |> gg_tsresiduals()
-fit_ar_stl_dn |> select(search_stl_dn_no_cov) |>
-  augment() |>
-  features(.innov,ljung_box,lag=26)
-
-# -=-=-=- Forecast and Test -=-=-=-
-fit_ar_stl_dn |> 
-  forecast(test) |>
-  autoplot(train,level=NULL)  # plot ahead from training
-fit_ar_stl_dn |> 
-  forecast(test) |>
-  autoplot(bind_rows(train,test),level=NULL)  # plot with full data
-
-fc_fit_ar_stl_dn <- fit_ar_stl_dn |>
-  forecast(test)
-accuracy(fc_fit_ar_stl_dn,test)
-
-fit_ar_stl_dn |> select(search_stl_dn_no_cov) |>
-augment() |>
-  ggplot(aes(x = Week)) +
-  geom_line(aes(y = stl_dn_crashes, colour = "Data")) +
-  geom_line(aes(y = .fitted, colour = "Fitted")) +
-  scale_colour_manual(
-    values = c(Data = "black", Fitted = "#D55E00")
-  )
+accuracy(fc_fit_sdif_3a,test)
 
 
 # ======== Model Fit - Neural Net ========

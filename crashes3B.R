@@ -1,3 +1,4 @@
+# ---- Classic Denoised Count ----
 
 library(urca)
 library(fpp3)
@@ -6,6 +7,11 @@ crashes <- read_excel("Datasets/EBR Daily by Hwy Class.xlsx")
 games <- read.csv('Datasets/lsu-schedule-scrape-18-23.csv')
 covid <- read_excel('Datasets/covid variable.xlsx')
 holidays <- read.csv('Datasets/holiday_dates_baton_rouge.csv')
+graph_path3b <- "graphs/3b/"
+
+graph_save <- function(graph,graph_name,graph_path) {
+  ggsave(paste0(graph_path,graph_name,".jpg"),graph,width=15,height=8)
+}
 
 # ==== Data Import and Weekly Conversion ====
 
@@ -76,15 +82,9 @@ crashes_w_hwy <- crashes_w_hwy |>
 # Plot crashes
 crashes_w_hwy |> autoplot(crashCount) +
   labs(title='Crashes on Urban 2-lane in EBR')
-# Crashes across seasons
-crashes_w_hwy |> 
-  gg_season(crashCount)
 # Lagged data
 crashes_w_hwy |>
   gg_lag(crashCount, geom = 'point', lags = c(5,10,15,20,26,30,35,40,45,50,52,60))
-# Subseries
-crashes_w_hwy |>
-  gg_subseries(crashCount)
 # Autocorrelation
 crashes_w_hwy |>
   ACF(crashCount,lag_max = 104) |>
@@ -168,27 +168,27 @@ test = crashes_w_hwy[(l+1):nrow(crashes_w_hwy),]
 freq=365.25
 
 # ==== Benchmarks ====
-bnch <- train |> 
-  model(naive = NAIVE(crashCount),
-        snaive = SNAIVE(crashCount),
-        drift = RW(crashCount ~ drift()))
+bnch_3b <- train |> 
+  model(naive = NAIVE(dn_crashes),
+        snaive = SNAIVE(dn_crashes),
+        drift = RW(dn_crashes ~ drift()))
 
-bnch |> 
+bnch_3b |> 
   forecast(test) |>
   autoplot(train,level=NULL)  # plot ahead from training
-bnch |> 
+bnch_3b |> 
   forecast(test) |>
   autoplot(bind_rows(train,test),level=NULL)  # plot with full data
 
-bnch_fc <- bnch |>
+fc_bnch_3b <- bnch_3b |>
   forecast(test)
 
-accuracy(bnch_fc,test)
+accuracy(fc_bnch_3b,test)
 
 # ======== Model Fit - TSLM w/vars ========
-fit_tslm <- train |>
-  model(tslm_base = TSLM(crashCount ~ trend() + season() + home + covid + icePresent),
-        tslm_inter = TSLM(crashCount ~ trend() * season() + home + covid + icePresent)
+fit_tslm_3b <- train |>
+  model(tslm_base = TSLM(dn_crashes ~ trend() + season() + home + covid + icePresent),
+        tslm_inter = TSLM(dn_crashes ~ trend() * season() + home + covid + icePresent)
 )
 
 glance(fit_tslm) |> arrange(AICc) |> select(.model:BIC)
@@ -212,8 +212,8 @@ accuracy(tslm_fc,test)
 
 # ======== Model Fit - Plain ARIMA ========
 fit_train <- train |> 
-  model(stepwise = ARIMA(crashCount),
-        search = ARIMA(crashCount, stepwise = FALSE))
+  model(stepwise = ARIMA(dn_crashes),
+        search = ARIMA(dn_crashes, stepwise = FALSE))
 
 glance(fit_train) |> arrange(AICc) |> select(.model:BIC)
 # Determine which model is best and explore it further
@@ -247,8 +247,8 @@ augment() |>
 
 # ======== Model Fit - ARIMA w/ Vars ========
 fit_ar_vars <- train |> 
-  model(searchFull_ic = ARIMA(crashCount ~ trend() + season() + home + covid + iceCrashes),
-        searchFull_ip = ARIMA(crashCount ~ trend() + season() + home + covid + icePresent))
+  model(searchFull_ic = ARIMA(dn_crashes ~ trend() + season() + home + covid + iceCrashes),
+        searchFull_ip = ARIMA(dn_crashes ~ trend() + season() + home + covid + icePresent))
 
 glance(fit_ar_vars) |> arrange(AICc) |> select(.model:BIC)
 
@@ -283,8 +283,8 @@ augment() |>
 
 # ======== Model Fit - Seasonal Difference ARIMA ========
 fit_sdif <- train |> 
-  model(stepwise_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid),
-        search_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid, stepwise = FALSE))
+  model(stepwise_sdif = ARIMA(dn_crashes ~ PDQ(0,0,0) + trend() + season() + home + covid),
+        search_sdif = ARIMA(dn_crashes ~ PDQ(0,0,0) + trend() + season() + home + covid, stepwise = FALSE))
 
 glance(fit_sdif) |> arrange(AICc) |> select(.model:BIC)
 

@@ -1,3 +1,4 @@
+# ---- STL Denoised Count ----
 
 library(urca)
 library(fpp3)
@@ -6,6 +7,8 @@ crashes <- read_excel("Datasets/EBR Daily by Hwy Class.xlsx")
 games <- read.csv('Datasets/lsu-schedule-scrape-18-23.csv')
 covid <- read_excel('Datasets/covid variable.xlsx')
 holidays <- read.csv('Datasets/holiday_dates_baton_rouge.csv')
+graph_path3c <- "graphs/3c/"
+
 
 # ==== Data Import and Weekly Conversion ====
 
@@ -76,15 +79,9 @@ crashes_w_hwy <- crashes_w_hwy |>
 # Plot crashes
 crashes_w_hwy |> autoplot(crashCount) +
   labs(title='Crashes on Urban 2-lane in EBR')
-# Crashes across seasons
-crashes_w_hwy |> 
-  gg_season(crashCount)
 # Lagged data
 crashes_w_hwy |>
   gg_lag(crashCount, geom = 'point', lags = c(5,10,15,20,26,30,35,40,45,50,52,60))
-# Subseries
-crashes_w_hwy |>
-  gg_subseries(crashCount)
 # Autocorrelation
 crashes_w_hwy |>
   ACF(crashCount,lag_max = 104) |>
