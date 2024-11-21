@@ -182,4 +182,4 @@ graph_save(cc_ma,'MovingAvgs',graph_path)
 
 #=================== Saving Combined tibble ===============
 
-write.csv(Crashes_w_hwy,paste0("./Data/Preprocessed/Crash_hwy_",hwy,"_Full.csv"))
+write.csv(Crashes_w_hwy,paste0("./Data/Preprocessed/Crash_hwy_",hwy,"_Full.csv"),row.names = F)
