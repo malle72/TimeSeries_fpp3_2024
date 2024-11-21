@@ -1,4 +1,4 @@
-#================== Loading Packages and Data, Setting paths ===========================
+#=================== Loading Packages and Data, Setting paths ==========================
 library(easypackages)
 libraries("urca","fpp3","tidyverse","readxl")
 
@@ -11,9 +11,9 @@ graph_save <- function(graph,graph_name,graph_path) {
   ggsave(paste0(graph_path,graph_name,".jpg"),graph,width=15,height=8)
 }
 
-#=================== Data Pre-processing ================================
+#=================== Data Pre-processing ==============================================
 
-#===== Convert to Weekly Data Tibbles ========
+# Convert to Weekly Data Tibbles
 
 #===== Crashes 
 Crashes_w <- Crashes |>
@@ -57,15 +57,14 @@ Holiday_w <- Holidays |>
   as_tsibble(index=Week) |>
   ungroup()
 
-# ==== Data Combination ====
+#===== Data Combination
 tables_list=list(Crashes_w,Games_w,Covid_w,Holiday_w)
 Crashes_w <- tables_list |> 
   reduce(left_join, by = c("Week"))|>
   mutate(across(everything(), ~ replace_na(., 0)))
 
 
-
-# ==== Data Selection and Mutation====
+#===== Data Selection and Mutation
 # Select a Highway Class (integer between 1 and 43)
 # Note: Not all have good data or create good forecasts
 hwy = 20
@@ -74,7 +73,7 @@ Crashes_w_hwy <- Crashes_w |>
   filter(HighwayClass == hwy) |>
   as_tsibble(index = Week)
 
-# ==== Moving Average ====
+#===== Moving Average
 Crashes_w_hwy <- Crashes_w_hwy |>
   mutate(
     `5-MA` = slider::slide_dbl(crashCount, mean, 
@@ -87,10 +86,55 @@ Crashes_w_hwy <- Crashes_w_hwy |>
                                 .before = 12, .after = 13, .complete = TRUE)
   )
 
+#=================== Decompositions ====================================================
+graph_path="./Results/Graphs/Decomposition/"
 
-# ==== Exploration ====
+# Classical Decomp Multiplicative
+CDM_Crashes_w_hwy=Crashes_w_hwy |>
+  model(
+    classical_decomposition(crashCount, type = 'multiplicative')
+  ) |>
+  components() |>
+  autoplot() + 
+  labs(title="Classical multiplicative decomposition of EBR Hwy Class 20 crashes")
+CDM_Crashes_w_hwy
+graph_save(CDM_Crashes_w_hwy,'Crashes_DecompMult_w_hwy',graph_path)
+
+# Classical Decomp Additive
+CDA_Crashes_w_hwy=Crashes_w_hwy |>
+  model(
+    classical_decomposition(crashCount, type = 'additive')
+  ) |>
+  components() |>
+  autoplot() + 
+  labs(title="Classical additive decomposition of EBR Hwy Class 20 crashes")
+graph_save(CDA_Crashes_w_hwy,'Crashes_DecompAdd_w_hwy',graph_path)
+
+# STL Decomp
+CDSTL_Crashes_w_hwy=Crashes_w_hwy |>
+  model(
+    STL(crashCount)
+  ) |>
+  components() |>
+  autoplot() + 
+  labs(title="STL decomposition of EBR Hwy Class 20 crashes")
+graph_save(CDSTL_Crashes_w_hwy,'Crashes_DecompSTL_w_hwy',graph_path)
+
+dcmp_add <- Crashes_w_hwy |> model(classical_decomposition(crashCount,type='additive'))
+dcmp_multi <- Crashes_w_hwy |> model(classical_decomposition(crashCount,type='multiplicative'))
+stl_dcmp <- Crashes_w_hwy |> model(STL(crashCount))
+
+# Add decomp related vars to the dataset
+Crashes_w_hwy <- Crashes_w_hwy |>
+  mutate(dn_crashes = crashCount - components(dcmp_add)$random,         # denoised data (additive)
+         season_adjust = components(dcmp_add)$season_adjust,            # seasonally adjusted (additive)
+         dn_multi = crashCount - components(dcmp_multi)$random,         # denoised data (multi)
+         season_adjust_multi = components(dcmp_multi)$season_adjust,    # seasonally adjusted (multi)
+         stl_dn_crashes = crashCount - components(stl_dcmp)$remainder,  # STL denoised data
+         stl_season_adjust = components(stl_dcmp)$season_adjust)        # STL seasonally adjusted
+
+#=================== Data Exploration Including Graphs =================================
 graph_path="./Results/Graphs/Exploration/"
-
 cc_byDay <- Crashes |> filter(HighwayClass == 20) |>
   mutate(CrashDate = date(CrashDate)) |>
   as_tsibble(index=CrashDate) |>
@@ -104,7 +148,6 @@ tot_crash<-Crashes_w_hwy |> autoplot(crashCount) +
 tot_crash
 graph_save(tot_crash,'TotalCrashes',graph_path)
 
-
 # Lagged data
 Lagged_Crashes=Crashes_w_hwy |>
   gg_lag(crashCount, geom = 'point', lags = c(5,10,15,20,26,30,35,40,45,50,52,60))
@@ -117,63 +160,26 @@ cc_ac <- Crashes_w_hwy |>
 cc_ac
 graph_save(cc_ac, 'CrashCountAutoCorrelation',graph_path)
 
-
 # White noise testing
 Crashes_w_hwy |> features(crashCount,ljung_box,lag=26) # Try a specifc lag value if the default is bad. 
 # Stationarity testing
 Crashes_w_hwy |> features(crashCount,list(unitroot_kpss,unitroot_ndiffs,unitroot_nsdiffs))
 
-
 # Moving average graphs
-cc_ma <- crashes_w_hwy |>
+cc_ma <- Crashes_w_hwy |>
   autoplot(crashCount, color='grey') +
   geom_line(aes(y = `5-MA`, color = "5-MA")) +
   geom_line(aes(y = `4-MA`, color = "4-MA")) +
   geom_line(aes(y = `2x4-MA`, color = "2x4-MA")) +
   geom_line(aes(y = `26-MA`, color = "26-MA")) +
   scale_color_manual(values = c("5-MA" = "#D55E00", "4-MA" = "blue", "2x4-MA" = "green","26-MA"="purple")) +
-  theme(legend.position = c(0.9, 0.12)) +
+  theme(legend.position.inside  = c(0.9, 0.12)) +
   labs(y = 'Crashes',
        title = 'EBR Hwy Class 20 Moving Avg Crashes',
        color = 'Moving Averages')
 cc_ma
-graph_save(cc_ma,'MovingAvgs',graph_path3a)
+graph_save(cc_ma,'MovingAvgs',graph_path)
 
-# ==== Decomposition ====
-# Classical Decomp Multiplicative
-crashes_w_hwy |>
-  model(
-    classical_decomposition(crashCount, type = 'multiplicative')
-  ) |>
-  components() |>
-  autoplot() + 
-  labs(title="Classical multiplicative decomposition of EBR Hwy Class 20 crashes")
-# Classical Decomp Additive
-crashes_w_hwy |>
-  model(
-    classical_decomposition(crashCount, type = 'additive')
-  ) |>
-  components() |>
-  autoplot() + 
-  labs(title="Classical additive decomposition of EBR Hwy Class 20 crashes")
-# STL Decomp
-crashes_w_hwy |>
-  model(
-    STL(crashCount)
-  ) |>
-  components() |>
-  autoplot() + 
-  labs(title="STL decomposition of EBR Hwy Class 20 crashes")
+#=================== Saving Combined tibble ===============
 
-dcmp_add <- crashes_w_hwy |> model(classical_decomposition(crashCount,type='additive'))
-dcmp_multi <- crashes_w_hwy |> model(classical_decomposition(crashCount,type='multiplicative'))
-stl_dcmp <- crashes_w_hwy |> model(STL(crashCount))
-
-# Add decomp related vars to the dataset
-crashes_w_hwy <- crashes_w_hwy |>
-  mutate(dn_crashes = crashCount - components(dcmp_add)$random,         # denoised data (additive)
-         season_adjust = components(dcmp_add)$season_adjust,            # seasonally adjusted (additive)
-         dn_multi = crashCount - components(dcmp_multi)$random,         # denoised data (multi)
-         season_adjust_multi = components(dcmp_multi)$season_adjust,    # seasonally adjusted (multi)
-         stl_dn_crashes = crashCount - components(stl_dcmp)$remainder,  # STL denoised data
-         stl_season_adjust = components(stl_dcmp)$season_adjust)        # STL seasonally adjusted
+write.csv(Crashes_w_hwy,paste0("./Data/Preprocessed/Crash_hwy_",hwy,"_Full.csv"))
