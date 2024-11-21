@@ -5,7 +5,7 @@ libraries("urca","fpp3","tidyverse")
 hwy=20
 Crashes_w_hwy=read.csv(paste0("./Data/Preprocessed/Crash_hwy_",hwy,"_Full.csv"))|>
   mutate(Week = yearweek(Week)) |>
-  as_tsibble(index = Week, key = HighwayClass)
+  as_tsibble(index = Week, key = HighwayClass)|>filter(!is.na(dn_crashes))
 
 #=================== Functions =========================================================
 ttsplit=function(p,dataset) {
@@ -26,6 +26,8 @@ graph_save <- function(graph,graph_name,graph_path) {
 
 P=seq(0.05,0.3,0.05)
 Ac_List=list()
+dir.create(paste0("./Results/Accuracies/Denoised_Ad/Hwy_",hwy))
+
 
 for (i in (1:length(P))){
 p = P[i]
@@ -36,17 +38,17 @@ Test <- splits$Test
 # ==== Model Fits ====
 
 fit_full <- Train |>
-  model(naive = NAIVE(crashCount),
-        snaive = SNAIVE(crashCount),
-        drift = RW(crashCount ~ drift()),
-        tslm_base = TSLM(crashCount ~ trend() + season()),
-        tslm_inter = TSLM(crashCount ~ trend() + season() + trend() * season() + home + covid + icePresent),
-        tslm_vars = TSLM(crashCount ~ trend() + season() + home + covid + holiday + icePresent),
-        arima_plain = ARIMA(crashCount, stepwise = TRUE),
-        arima_full = ARIMA(crashCount ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
-        arima_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
-        nn_base = NNETAR(crashCount, n_networks = 10),
-        nn_vars = NNETAR(crashCount~ home + covid + holiday + icePresent, n_networks = 10)
+  model(naive = NAIVE(dn_crashes),
+        snaive = SNAIVE(dn_crashes),
+        drift = RW(dn_crashes ~ drift()),
+        tslm_base = TSLM(dn_crashes ~ trend() + season()),
+        tslm_inter = TSLM(dn_crashes ~ trend() + season() + trend() * season() + home + covid + icePresent),
+        tslm_vars = TSLM(dn_crashes ~ trend() + season() + home + covid + holiday + icePresent),
+        arima_plain = ARIMA(dn_crashes, stepwise = TRUE),
+        arima_full = ARIMA(dn_crashes ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
+        arima_sdif = ARIMA(dn_crashes ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
+        nn_base = NNETAR(dn_crashes, n_networks = 10),
+        nn_vars = NNETAR(dn_crashes~ home + covid + holiday + icePresent, n_networks = 10)
   )
 
 
@@ -60,8 +62,7 @@ ac_full=ac_full|>mutate(P=p)
 
 
 Ac_List[[i]]=ac_full|>select(.model,RMSE,P)
-dir.create(paste0("./Results/Accuracies/Full/Hwy_",hwy))
-write.csv(ac_full,paste0("./Results/Accuracies/Full/Hwy_",hwy,"/TTsp_",p,".csv"))
+write.csv(ac_full,paste0("./Results/Accuracies/Denoised_Ad/Hwy_",hwy,"/TTsp_",p,".csv"))
 print(paste0("Finished p=",p))
 }
 
@@ -138,5 +139,5 @@ p1=ggplot(Combined_tibble, aes(x = Proportion, y = RMSE, color = Model)) +
     legend.text = element_text(size = 10)
   )
 p1
-graph_save(p1,"RMSE_vs_proportion",paste0("./Results/Graphs/RMSE/Crash_Full_hwy_",hwy))
+graph_save(p1,"RMSE_vs_proportion",paste0("./Results/Graphs/RMSE/Crash_Denoised_Ad_hwy_",hwy))
 
