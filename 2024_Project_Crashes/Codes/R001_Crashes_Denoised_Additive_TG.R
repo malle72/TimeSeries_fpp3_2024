@@ -26,44 +26,48 @@ graph_save <- function(graph,graph_name,graph_path) {
 
 P=seq(0.05,0.3,0.05)
 Ac_List=list()
+Mod_List=list()
 dir.create(paste0("./Results/Accuracies/Denoised_Ad/Hwy_",hwy))
 
 
 for (i in (1:length(P))){
-p = P[i]
-splits=ttsplit(p,Crashes_w_hwy)
-Train <- splits$Train
-Test <- splits$Test
+  p = P[i]
+  splits=ttsplit(p,Crashes_w_hwy)
+  Train <- splits$Train
+  Test <- splits$Test
 
 # ==== Model Fits ====
+  print(paste0("Working on p=",p))
 
-fit_full <- Train |>
-  model(naive = NAIVE(dn_crashes),
-        snaive = SNAIVE(dn_crashes),
-        drift = RW(dn_crashes ~ drift()),
-        tslm_base = TSLM(dn_crashes ~ trend() + season()),
-        tslm_inter = TSLM(dn_crashes ~ trend() + season() + trend() * season() + home + covid + icePresent),
-        tslm_vars = TSLM(dn_crashes ~ trend() + season() + home + covid + holiday + icePresent),
-        arima_plain = ARIMA(dn_crashes, stepwise = TRUE),
-        arima_full = ARIMA(dn_crashes ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
-        arima_sdif = ARIMA(dn_crashes ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
-        nn_base = NNETAR(dn_crashes, n_networks = 10),
-        nn_vars = NNETAR(dn_crashes~ home + covid + holiday + icePresent, n_networks = 10)
-  )
+  fit_full <- Train |>
+    model(naive = NAIVE(dn_crashes),
+          snaive = SNAIVE(dn_crashes),
+          drift = RW(dn_crashes ~ drift()),
+          tslm_base = TSLM(dn_crashes ~ trend() + season()),
+          tslm_inter = TSLM(dn_crashes ~ trend() + season() + trend() * season() + home + covid + icePresent),
+          tslm_vars = TSLM(dn_crashes ~ trend() + season() + home + covid + holiday + icePresent),
+          arima_plain = ARIMA(dn_crashes, stepwise = TRUE),
+          arima_full = ARIMA(dn_crashes ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
+          arima_sdif = ARIMA(dn_crashes ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
+          nn_base = NNETAR(dn_crashes, n_networks = 10),
+          nn_vars = NNETAR(dn_crashes~ home + covid + holiday + icePresent, n_networks = 10)
+    )
 
+  Mod_List[[as.character(p)]] <- fit_full
 
 # ==== Model Evaluation ====
-glance(fit_full) |> arrange(AICc) |> select(.model:BIC)
-accuracy(fit_full)
+  glance(fit_full) |> arrange(AICc) |> select(.model:BIC)
+  accuracy(fit_full)
+  
+  print(paste0("Forecasting p=",p))
+  for_full <- fit_full |> forecast(Test)
+  ac_full <- accuracy(for_full,Test) |> arrange(RMSE)
+  ac_full=ac_full|>mutate(P=p)
 
-for_full <- fit_full |> forecast(Test)
-ac_full <- accuracy(for_full,Test) |> arrange(RMSE)
-ac_full=ac_full|>mutate(P=p)
 
-
-Ac_List[[i]]=ac_full|>select(.model,RMSE,P)
-write.csv(ac_full,paste0("./Results/Accuracies/Denoised_Ad/Hwy_",hwy,"/TTsp_",p,".csv"))
-print(paste0("Finished p=",p))
+  Ac_List[[i]]=ac_full|>select(.model,RMSE,P)
+  write.csv(ac_full,paste0("./Results/Accuracies/Denoised_Ad/Hwy_",hwy,"/TTsp_",p,".csv"))
+  print(paste0("Finished p=",p))
 }
 
 #=================== Accuracy collection/ Presentation =================================
@@ -140,4 +144,23 @@ p1=ggplot(Combined_tibble, aes(x = Proportion, y = RMSE, color = Model)) +
   )
 p1
 graph_save(p1,"RMSE_vs_proportion",paste0("./Results/Graphs/RMSE/Crash_Denoised_Ad_hwy_",hwy))
+
+# =================== Residual Analysis ===================
+
+for (p in names(Mod_List)) {
+  cat("Processing p=",p," models \n")
+  for (mod in names(Mod_List[[p]])) {
+    if(mod=='HighwayClass') next
+    cat("  - Processing model:", mod, "\n")
+    curr_model <- Mod_List[[p]] |> select(mod)
+    curr_resid_graph <- curr_model |> gg_tsresiduals() + labs(title=paste(mod,'Residuals'), subtitle=paste0("Denoised Additive ",'(p=',p,")"))
+    graph_save(graph=curr_resid_graph, 
+               graph_name=paste0("Residuals",p,mod), 
+               graph_path=paste0("./Results/Graphs/Residuals/Crash_Denoised_Ad_hwy_",hwy,"/"))
+  }
+}
+
+
+
+
 
