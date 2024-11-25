@@ -26,7 +26,7 @@ graph_save <- function(graph,graph_name,graph_path) {
 
 P=seq(0.05,0.3,0.05)
 Ac_List=list()
-Mod_List=list()
+Mod_List_crashes=list()
 
 
 for (i in (1:length(P))){
@@ -36,26 +36,28 @@ for (i in (1:length(P))){
   Test <- splits$Test
   
   # ==== Model Fits ====
+  print(paste0("Working on p=",p))
   
   fit_full <- Train |>
     model(naive = NAIVE(crashCount),
           snaive = SNAIVE(crashCount),
           drift = RW(crashCount ~ drift()),
           tslm_base = TSLM(crashCount ~ trend() + season()),
-          tslm_inter = TSLM(crashCount ~ trend() + season() + trend() * season() + home + covid + icePresent),
+          tslm_inter = TSLM(crashCount ~ trend() + season() + trend() * season() + home + covid + holiday + icePresent),
           tslm_vars = TSLM(crashCount ~ trend() + season() + home + covid + holiday + icePresent),
           arima_plain = ARIMA(crashCount, stepwise = TRUE),
           arima_full = ARIMA(crashCount ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
           arima_sdif = ARIMA(crashCount ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
-          nn_base = NNETAR(crashCount, n_networks = 10),
-          nn_vars = NNETAR(crashCount~ home + covid + holiday + icePresent, n_networks = 10)
+          #nn_base = NNETAR(crashCount, n_networks = 10),
+          #nn_vars = NNETAR(crashCount~ home + covid + holiday + icePresent, n_networks = 10)
     )
-  
+  Mod_List_crashes[[as.character(p)]] <- fit_full
   
   # ==== Model Evaluation ====
   glance(fit_full) |> arrange(AICc) |> select(.model:BIC)
   accuracy(fit_full)
   
+  print(paste0("Forecasting p=",p))
   for_full <- fit_full |> forecast(Test)
   ac_full <- accuracy(for_full,Test) |> arrange(RMSE)
   ac_full=ac_full|>mutate(P=p)
@@ -142,3 +144,37 @@ p1=ggplot(Combined_tibble, aes(x = Proportion, y = RMSE, color = Model)) +
 p1
 graph_save(p1,"RMSE_vs_proportion",paste0("./Results/Graphs/RMSE/Crash_Full_hwy_",hwy))
 
+# =================== Residual Analysis ===================
+
+for (p in names(Mod_List_crashes)) {
+  cat("Processing p=",p," models \n")
+  for (mod in names(Mod_List_crashes[[p]])) {
+    if(mod=='HighwayClass') next
+    cat("  - Processing model:", mod, "\n")
+    curr_model <- Mod_List_crashes[[p]] |> select(mod)
+    curr_resid_graph <- curr_model |> gg_tsresiduals() + labs(title=paste(mod,'Residuals'), subtitle=paste0("Original Data ",'(p=',p,")"))
+    graph_save(graph=curr_resid_graph, 
+               graph_name=paste0("Residuals",p,mod), 
+               graph_path=paste0("./Results/Graphs/Residuals/Crash_Full_hwy_",hwy,"/"))
+  }
+}
+
+# Initialize empty tibble
+residuals_tibble <- tibble::tibble(p = character(), .model = character(), .feature = character(), .value = numeric())
+
+for (p in names(Mod_List_crashes)) {
+  for (mod in names(Mod_List_crashes[[p]])) {
+    if (mod == "HighwayClass") next
+    curr_model <- Mod_List_crashes[[p]] |> select(mod) # Select the current model
+    # Compute autocorrelation of residuals
+    residual_features <- curr_model |> 
+      augment() |> 
+      features(.innov, ljung_box) |> 
+      mutate(p = p, .model = mod) # Add the "p" and ".model" columns to the result
+    # Append to the main tibble
+    residuals_tibble <- dplyr::bind_rows(residuals_tibble, residual_features)
+  }
+}
+residuals_tibble <- residuals_tibble |> select(-.feature,-.value)  # remove empty feature and value columns
+
+write.csv(residuals_tibble,paste0("./Results/Accuracies/Full/Hwy_",hwy,"/Residuals",".csv"))

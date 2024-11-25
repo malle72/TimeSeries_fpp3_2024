@@ -160,7 +160,25 @@ for (p in names(Mod_List)) {
   }
 }
 
+# Initialize empty tibble
+residuals_tibble <- tibble::tibble(p = character(), .model = character(), .feature = character(), .value = numeric())
 
+for (p in names(Mod_List)) {
+  for (mod in names(Mod_List[[p]])) {
+    if (mod == "HighwayClass") next
+    curr_model <- Mod_List[[p]] |> select(mod) # Select the current model
+    # Compute autocorrelation of residuals
+    residual_features <- curr_model |> 
+      augment() |> 
+      features(.innov, ljung_box) |> 
+      mutate(p = p, .model = mod) # Add the "p" and ".model" columns to the result
+    # Append to the main tibble
+    residuals_tibble <- dplyr::bind_rows(residuals_tibble, residual_features)
+  }
+}
+residuals_tibble <- residuals_tibble |> select(-.feature,-.value)  # remove empty feature and value columns
+
+write.csv(residuals_tibble,paste0("./Results/Accuracies/Denoised_Ad/Hwy_",hwy,"/Residuals",".csv"))
 
 
 
