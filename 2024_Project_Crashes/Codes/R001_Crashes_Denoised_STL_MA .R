@@ -24,9 +24,9 @@ graph_save <- function(graph,graph_name,graph_path) {
 
 #=================== Main Analysis =====================================================
 
-P=seq(0.1,0.3,0.05)
+P=seq(0.05,0.3,0.05)
 Ac_List=list()
-Mod_List=list()
+Mod_List_stl_dn=list()
 dir.create(paste0("./Results/Accuracies/Denoised_STL/Hwy_",hwy))
 
 
@@ -46,13 +46,15 @@ for (i in (1:length(P))){
           tslm_base = TSLM(stl_dn_crashes ~ trend() + season()),
           tslm_inter = TSLM(stl_dn_crashes ~ trend() + season() + trend() * season() + home + covid + icePresent),
           tslm_vars = TSLM(stl_dn_crashes ~ trend() + season() + home + covid + holiday + icePresent),
+          tslm_vars_no_comp = TSLM(stl_dn_crashes ~ home + covid + holiday + icePresent),
           arima_plain = ARIMA(stl_dn_crashes, stepwise = TRUE),
           arima_full = ARIMA(stl_dn_crashes ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
+          arima_no_comp = ARIMA(stl_dn_crashes ~ trend() + season() + home + covid + holiday + icePresent, stepwise = TRUE),
           arima_sdif = ARIMA(stl_dn_crashes ~ PDQ(0,0,0) + trend() + season() + home + covid + holiday, stepwise = TRUE),
-          nn_base = NNETAR(stl_dn_crashes, n_networks = 10),
-          nn_vars = NNETAR(stl_dn_crashes~ home + covid + holiday + icePresent, n_networks = 10)
+          # nn_base = NNETAR(stl_dn_crashes, n_networks = 10),
+          # nn_vars = NNETAR(stl_dn_crashes~ home + covid + holiday + icePresent, n_networks = 10)
     )
-  Mod_List_stl_dn[[as.character(p)]] <- as.list(fit_full)
+  Mod_List_stl_dn[[as.character(p)]] <- fit_full
   
 
   # ==== Model Evaluation ====
@@ -78,8 +80,8 @@ Combined_tibble <- bind_rows(Ac_List)|> rename(
 )|>mutate(
     Group = case_when(
       Model %in% c("nn_base", "nn_vars") ~ "Neural Networks",
-      Model %in% c("arima_full", "arima_plain", "arima_sdif") ~ "ARIMA",
-      Model %in% c("tslm_base", "tslm_inter", "tslm_vars") ~ "Regression",
+      Model %in% c("arima_full", "arima_plain", "arima_sdif",'arima_no_comp') ~ "ARIMA",
+      Model %in% c("tslm_base", "tslm_inter", "tslm_vars","tslm_vars_no_comp") ~ "Regression",
       Model %in% c("drift", "naive", "snaive") ~ "Baseline",
       TRUE ~ "Other"
     )
@@ -87,15 +89,15 @@ Combined_tibble <- bind_rows(Ac_List)|> rename(
   mutate(Group = factor(Group, levels = c("Neural Networks", "ARIMA", "Regression", "Baseline")))|>
   mutate(Model = factor(Model, levels = c(
     "nn_base", "nn_vars",
-    "arima_full", "arima_plain", "arima_sdif",
-    "tslm_base", "tslm_inter", "tslm_vars",
+    "arima_full", "arima_plain", "arima_sdif", "arima_no_comp",
+    "tslm_base", "tslm_inter", "tslm_vars", "tslm_vars_no_comp",
     "drift", "naive", "snaive"
   )))
 
 custom_colors <- c(
   "nn_base" = "#1f77b4", "nn_vars" = "#74a9cf",
-  "arima_full" = "#31a354", "arima_plain" = "#74c476", "arima_sdif" = "#a1d99b",
-  "tslm_base" = "#ffcc00", "tslm_inter" = "#ffdd55", "tslm_vars" = "#ffee99",
+  "arima_full" = "#31a354", "arima_plain" = "#74c476", "arima_no_comp" = "#a1d99b",
+  "tslm_base" = "#ffcc00", "tslm_inter" = "#ffdd55", "tslm_vars" = "#ffee99", "tslm_vars_no_comp" = "#ffff00",
   "drift" = "#de2d26", "naive" = "#fc9272", "snaive" = "#fcbba1"
 )
 
@@ -156,11 +158,11 @@ for (p in names(Mod_List_stl_dn)) {
     curr_model <- Mod_List_stl_dn[[p]] |> select(mod)
     curr_resid_graph <- curr_model |> gg_tsresiduals() + labs(title=paste(mod,'Residuals'), subtitle=paste0("Denoised STL ",'(p=',p,")"))
     graph_save(graph=curr_resid_graph, 
-               graph_name=paste0("Residuals",p,mod), 
+               graph_name=paste0("Residuals",mod,p), 
                graph_path=paste0("./Results/Graphs/Residuals/Crash_Denoised_STL_hwy_",hwy,"/"))
   }
 }
 
 
-
+for_full
 
