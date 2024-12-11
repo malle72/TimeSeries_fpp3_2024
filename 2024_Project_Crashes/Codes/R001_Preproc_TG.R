@@ -8,7 +8,7 @@ Covid <- read_excel('./Data/covid variable.xlsx')
 Holidays <- read.csv('./Data/holiday_dates_baton_rouge.csv')
 
 graph_save <- function(graph,graph_name,graph_path) {
-  ggsave(paste0(graph_path,graph_name,".jpg"),graph,width=15,height=8)
+  ggsave(paste0(graph_path,graph_name,".png"),graph,width=15,height=8)
 }
 
 #=================== Data Pre-processing ==============================================
@@ -107,7 +107,8 @@ CDA_Crashes_w_hwy=Crashes_w_hwy |>
   ) |>
   components() |>
   autoplot() + 
-  labs(title="Classical additive decomposition of EBR Hwy Class 20 crashes")
+  labs(title="Classical additive decomposition of EBR Hwy Class 20 crashes")+
+  theme_bw()
 graph_save(CDA_Crashes_w_hwy,'Crashes_DecompAdd_w_hwy',graph_path)
 
 # STL Decomp
@@ -135,12 +136,18 @@ Crashes_w_hwy <- Crashes_w_hwy |>
 
 #=================== Data Exploration Including Graphs =================================
 graph_path="./Results/Graphs/Exploration/"
+
 cc_byDay <- Crashes |> filter(HighwayClass == 20) |>
   mutate(CrashDate = date(CrashDate)) |>
   as_tsibble(index=CrashDate) |>
   autoplot(crashCount)
 cc_byDay
 graph_save(cc_byDay,'CrashCountByDay',graph_path)
+
+Dn_Graph <- Crashes_w_hwy |> filter(HighwayClass == 20) |> filter(!is.na(dn_crashes))|>
+  autoplot(dn_crashes)
+Dn_Graph
+graph_save(Dn_Graph,'Denoised_Crashes',graph_path)
 
 # Plot crashes
 tot_crash<-Crashes_w_hwy |> autoplot(crashCount) +
