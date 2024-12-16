@@ -1,6 +1,6 @@
 #=================== Loading Packages and Data, Setting paths ==========================
 library(easypackages)
-libraries("urca","fpp3","tidyverse","readxl")
+libraries("urca","fpp3","tidyverse","readxl","lubridate")
 
 Crashes <- read_excel("./Data/EBR Daily by Hwy Class.xlsx")
 Games <- read.csv('./Data/lsu-schedule-scrape-18-23.csv')
@@ -17,6 +17,7 @@ graph_save <- function(graph,graph_name,graph_path) {
 
 #===== Crashes 
 Crashes_w <- Crashes |>
+  mutate(CrashDate = as.Date(CrashDate, format = "%Y-%m-%d"))|> 
   mutate(Week = yearweek(CrashDate)) |>
   group_by(Week, HighwayClass) |>
   summarise(
@@ -29,6 +30,7 @@ Crashes_w <- Crashes |>
     iceCrashes = sum(iceCrashes),
     icePresent = ifelse(iceCrashes > 0,1,0)
   ) |>
+  separate(Week, into = c("Year", "Week01"), sep = " ", remove = FALSE)|>
   as_tsibble(index = Week, key = HighwayClass) |>
   ungroup()
 
@@ -88,16 +90,28 @@ Crashes_w_hwy <- Crashes_w_hwy |>
 
 #=================== Decompositions ====================================================
 graph_path="./Results/Graphs/Decomposition/"
+Crashes_w_hwy <- Crashes_w_hwy |>
+  mutate(
+    Date = yearweek(Week, week_start = 1) # Convert to yearweek format
+  )
+year_breaks <- Crashes_w_hwy |>
+  filter(str_detect(Week, "W01")) |>
+  pull(Date)
 
-# Classical Decomp Multiplicative
-CDM_Crashes_w_hwy=Crashes_w_hwy |>
+CDM_Crashes_w_hwy <- Crashes_w_hwy |>
   model(
     classical_decomposition(crashCount, type = 'multiplicative')
   ) |>
   components() |>
-  autoplot() + 
-  labs(title="Classical multiplicative decomposition of EBR Hwy Class 20 crashes")
+  autoplot() +
+  scale_x_yearweek(
+    name = "Year",
+    breaks = year_breaks,   # Use only first weeks of each year
+    labels = year(year_breaks) # Extract only the year for labeling
+  ) +
+  labs(title = "Classical multiplicative decomposition of EBR Hwy Class 20 crashes")
 CDM_Crashes_w_hwy
+
 graph_save(CDM_Crashes_w_hwy,'Crashes_DecompMult_w_hwy',graph_path)
 
 # Classical Decomp Additive
